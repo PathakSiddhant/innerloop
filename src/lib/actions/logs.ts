@@ -4,14 +4,25 @@ import { dailyLogs } from "@/lib/db/schema";
 import { auth } from "@clerk/nextjs/server";
 import { revalidatePath } from "next/cache";
 
-// Type define kiya taaki 'any' ka error na aaye
+// Updated LogContent with Diet & Detailed Sets support
 export type LogContent = {
+  // Workout details
   workoutName?: string;
-  exercises?: Array<{ name: string; sets: number; reps: number; weight: number }>;
+  exercises?: Array<{ 
+    name: string; 
+    sets: Array<{ reps: number; weight: number; completed: boolean }> 
+  }>;
+  
+  // Diet details
+  calories?: number;
+  macros?: { protein: number; carbs: number; fats: number };
+  waterIntake?: number; // in ml
+  
+  // Meta & Tech details
   project?: string;
   notes?: string;
   duration?: number;
-  [key: string]: unknown; // Flexibility ke liye
+  [key: string]: unknown; // Flexibility for future modules
 };
 
 export async function createDailyLog(
@@ -23,13 +34,22 @@ export async function createDailyLog(
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
 
-  await db.insert(dailyLogs).values({
-    userId,
-    type,
-    content,
-    energyLevel: energy,
-    mood,
-  });
+  try {
+    await db.insert(dailyLogs).values({
+      userId,
+      type,
+      content,
+      energyLevel: energy,
+      mood,
+    });
 
-  revalidatePath("/dashboard");
+    // Revalidate multiple paths to keep UI in sync
+    revalidatePath("/dashboard");
+    revalidatePath("/fitness");
+    
+    return { success: true };
+  } catch (error) {
+    console.error("Database Insert Error:", error);
+    throw new Error("Failed to create log");
+  }
 }
