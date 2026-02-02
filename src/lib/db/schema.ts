@@ -18,10 +18,11 @@ export const users = pgTable("users", {
 // 2. Daily Logs - The "Feed" for the AI
 export const dailyLogs = pgTable("daily_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
-  userId: uuid("user_id").references(() => users.id),
+  // Yahan hum clerkId use kar rahe hain linking ke liye as per instructions
+  userId: text("user_id").notNull(), 
   type: text("type").notNull(), // 'fitness', 'tech', 'task', 'meeting'
   
-  // Storing flexible data as JSONB so we don't need 50 tables yet
+  // Storing flexible data as JSONB
   content: jsonb("content").notNull(), 
   
   mood: text("mood"), // 🔥, 😐, 😵
