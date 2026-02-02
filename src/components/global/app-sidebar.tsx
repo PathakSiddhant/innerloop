@@ -35,7 +35,7 @@ export function AppSidebar() {
   return (
     <Sidebar className="border-r border-white/10 bg-black">
       <SidebarHeader className="p-4">
-        <h1 className="text-xl font-bold bg-gradient-to-r from-white to-gray-500 bg-clip-text text-transparent">
+        <h1 className="text-xl font-bold bg-linear-to-r from-white to-gray-500 bg-clip-text text-transparent">
           INNERLOOP
         </h1>
       </SidebarHeader>
