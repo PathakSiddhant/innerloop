@@ -1,9 +1,15 @@
-export default function Home() {
+import { HeroSection } from "@/components/global/hero";
+import { checkUser } from "@/lib/actions/user";
+
+export default async function Home() {
+  const user = await checkUser();
+  
+  // Debugging ke liye taaki ESLint error na de
+  if (user) console.log("User in session:", user.email);
+
   return (
-    <div className="flex min-h-screen items-center justify-center font-sans">
-      <main>
-        <h1 className="text-2xl font-bold">InnerLoop</h1>
-      </main>
-    </div>
+    <main className="flex flex-col items-center justify-center min-h-screen bg-black overflow-hidden">
+      <HeroSection />
+    </main>
   );
 }
