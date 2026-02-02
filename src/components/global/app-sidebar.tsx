@@ -1,69 +1,43 @@
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarFooter,
-  SidebarHeader,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-} from "@/components/ui/sidebar";
-import { 
-  LayoutDashboard, 
-  Dumbbell, 
-  Code2, 
-  CheckCircle2, 
-  Trophy, 
-  Video, 
-  Link2, 
-} from "lucide-react";
-import { UserButton } from "@clerk/nextjs";
+"use client"
+import { LayoutDashboard, Dumbbell, Code2, ListTodo, Trophy, Film, Library, Settings } from "lucide-react"
+import { Sidebar, SidebarContent, SidebarHeader, SidebarMenu, SidebarMenuItem, SidebarMenuButton } from "@/components/ui/sidebar"
+import { ModeToggle } from "./mode-toggle"
+import { UserButton } from "@clerk/nextjs"
 
-const items = [
-  { title: "Overview", url: "/dashboard", icon: LayoutDashboard },
-  { title: "Fitness", url: "/fitness", icon: Dumbbell },
-  { title: "Builder Mode", url: "/builder", icon: Code2 },
-  { title: "Daily Tasks", url: "/tasks", icon: CheckCircle2 },
-  { title: "Sports", url: "/sports", icon: Trophy },
-  { title: "Entertainment", url: "/entertainment", icon: Video },
-  { title: "Vault", url: "/vault", icon: Link2 },
-];
+const menuItems = [
+  { icon: LayoutDashboard, label: "Overview", href: "/dashboard" },
+  { icon: Dumbbell, label: "Fitness", href: "/fitness" },
+  { icon: Code2, label: "Builder Mode", href: "/builder" },
+  { icon: ListTodo, label: "Daily Tasks", href: "/tasks" },
+  { icon: Trophy, label: "Sports", href: "/sports" },
+  { icon: Film, label: "Entertainment", href: "/entertainment" },
+  { icon: Library, label: "The Vault", href: "/vault" },
+]
 
 export function AppSidebar() {
   return (
-    <Sidebar className="border-r border-white/10 bg-black">
-      <SidebarHeader className="p-4">
-        <h1 className="text-xl font-bold bg-linear-to-r from-white to-gray-500 bg-clip-text text-transparent">
-          INNERLOOP
-        </h1>
+    <Sidebar className="border-r dark:border-zinc-800 bg-white dark:bg-zinc-950">
+      <SidebarHeader className="flex flex-row items-center justify-between p-4">
+        <span className="font-black text-xl tracking-tighter dark:text-white">INNERLOOP</span>
+        <ModeToggle />
       </SidebarHeader>
-      <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel className="text-gray-500">System</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {items.map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild>
-                    <a href={item.url} className="text-gray-300 hover:text-white transition-colors">
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </a>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+      <SidebarContent className="p-2">
+        <SidebarMenu>
+          {menuItems.map((item) => (
+            <SidebarMenuItem key={item.label}>
+              <SidebarMenuButton asChild tooltip={item.label} className="hover:bg-zinc-100 dark:hover:bg-zinc-900 h-12 rounded-xl transition-all">
+                <a href={item.href} className="flex items-center gap-3">
+                  <item.icon className="w-5 h-5 text-zinc-500 dark:text-zinc-400" />
+                  <span className="font-semibold text-zinc-700 dark:text-zinc-200">{item.label}</span>
+                </a>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter className="p-4 border-t border-white/10">
-        <div className="flex items-center gap-2 text-white">
-          <UserButton afterSignOutUrl="/" />
-          <span className="text-sm font-medium">Profile</span>
-        </div>
-      </SidebarFooter>
+      <div className="mt-auto p-4 border-t dark:border-zinc-800">
+        <UserButton afterSignOutUrl="/" showName />
+      </div>
     </Sidebar>
-  );
+  )
 }
