@@ -15,14 +15,16 @@ export const users = pgTable("users", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// 2. Daily Logs - The "Feed" for the AI
+// 2. Daily Logs - The "Feed" for the AI (Updated as per instructions)
 export const dailyLogs = pgTable("daily_logs", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // Yahan hum clerkId use kar rahe hain linking ke liye as per instructions
+  // ClerkId linking ke liye
   userId: text("user_id").notNull(), 
-  type: text("type").notNull(), // 'fitness', 'tech', 'task', 'meeting'
   
-  // Storing flexible data as JSONB
+  // Type mein ab 'diet' aur 'health' bhi include honge as per instructions
+  type: text("type").notNull(), // 'fitness', 'diet', 'health', 'tech', 'task', 'meeting'
+  
+  // Flexible data like steps aur target_water isi content (JSONB) mein jayenge
   content: jsonb("content").notNull(), 
   
   mood: text("mood"), // 🔥, 😐, 😵
