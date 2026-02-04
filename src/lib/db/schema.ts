@@ -72,3 +72,43 @@ export const fitnessDays = pgTable("fitness_days", {
 
   updatedAt: timestamp("updated_at").defaultNow(),
 });
+
+// 3. PROJECTS TABLE
+export const projects = pgTable("projects", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  name: text("name").notNull(),
+  vision: text("vision"),
+  status: text("status").default("building"), // building, shipped, dropped
+  techStack: jsonb("tech_stack").$type<string[]>().default([]).notNull(),
+  complexityScore: integer("complexity_score").default(1),
+  revenuePotential: integer("revenue_potential").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// 4. IDEA VAULT TABLE
+export const ideas = pgTable("ideas", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  title: text("title").notNull(),
+  problem: text("problem").notNull(),
+  audience: text("audience"),
+  solution: text("solution"),
+  differentiation: text("differentiation"),
+  isValidated: boolean("is_validated").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// 5. DAILY DEV LOGS
+export const devLogs = pgTable("dev_logs", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  projectId: uuid("project_id").references(() => projects.id),
+  date: text("date").notNull(), // YYYY-MM-DD
+  tasksCompleted: jsonb("tasks_completed").$type<string[]>().default([]).notNull(),
+  blockers: text("blockers"),
+  energyLevel: integer("energy_level"), // 1-10 (flow state index)
+  commitCount: integer("commit_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+});
