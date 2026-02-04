@@ -1,6 +1,38 @@
-import { pgTable, text, uuid, timestamp, integer, jsonb } from "drizzle-orm/pg-core";
+import { pgTable, text, integer, boolean, jsonb, real, uuid, timestamp } from "drizzle-orm/pg-core";
 
-// 1. User Table - Core identity & AI Persona
+// --- TYPES FOR JSON COLUMNS ---
+export interface Set { 
+  id: string; 
+  weight: number; 
+  reps: number; 
+  completed: boolean; 
+}
+
+export interface Exercise { 
+  id: string; 
+  name: string; 
+  sets: Set[]; 
+  isCollapsed: boolean; 
+}
+
+export interface WorkoutSession { 
+  id: string; 
+  name: string; 
+  startTime: number; 
+  endTime: number | null; 
+  exercises: Exercise[]; 
+}
+
+export interface FoodItem { 
+  id: string; 
+  name: string; 
+  cals: number; 
+  p: number; 
+  c: number; 
+  f: number; 
+}
+
+// 1. User Table (Existing Identity)
 export const users = pgTable("users", {
   id: uuid("id").primaryKey().defaultRandom(),
   clerkId: text("clerk_id").unique().notNull(),
@@ -8,27 +40,35 @@ export const users = pgTable("users", {
   name: text("name"),
   imageUrl: text("image_url"),
   
-  // AI Personalization
-  personaMode: text("persona_mode").default("coach"), // coach, commander, roast
-  focusArea: text("focus_area").default("both"), // body, career, both
+  personaMode: text("persona_mode").default("coach"), 
+  focusArea: text("focus_area").default("both"),
   
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// 2. Daily Logs - The "Feed" for the AI (Updated as per instructions)
-export const dailyLogs = pgTable("daily_logs", {
+// 2. FITNESS DAYS TABLE
+export const fitnessDays = pgTable("fitness_days", {
   id: uuid("id").primaryKey().defaultRandom(),
-  // ClerkId linking ke liye
+  
   userId: text("user_id").notNull(), 
+  date: text("date").notNull(),
+
+  // Simple Data
+  isRestDay: boolean("is_rest_day").default(false).notNull(),
+  waterGoal: integer("water_goal").default(3000).notNull(),
+  waterIntake: integer("water_intake").default(0).notNull(),
+  stepGoal: integer("step_goal").default(10000).notNull(),
+  stepCount: integer("step_count").default(0).notNull(),
+  bodyWeight: real("body_weight"),
+  targetWeight: real("target_weight").default(75),
+
+  // Complex Data (Type-Safe JSONB)
+  sessions: jsonb("sessions").$type<WorkoutSession[]>().default([]).notNull(),
+  meals: jsonb("meals").$type<FoodItem[]>().default([]).notNull(),
   
-  // Type mein ab 'diet' aur 'health' bhi include honge as per instructions
-  type: text("type").notNull(), // 'fitness', 'diet', 'health', 'tech', 'task', 'meeting'
-  
-  // Flexible data like steps aur target_water isi content (JSONB) mein jayenge
-  content: jsonb("content").notNull(), 
-  
-  mood: text("mood"), // 🔥, 😐, 😵
-  energyLevel: integer("energy_level"), // 1-10
-  
-  date: timestamp("date").defaultNow(),
+  macroGoal: jsonb("macro_goal").$type<{
+    cals: number; p: number; c: number; f: number
+  }>().default({ cals: 2500, p: 180, c: 250, f: 70 }).notNull(),
+
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
