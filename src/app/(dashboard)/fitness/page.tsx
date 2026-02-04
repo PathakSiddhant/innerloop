@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Dumbbell, Utensils, Droplets, Footprints, Calendar as CalendarIcon,
   ChevronLeft, ChevronRight, X, Trash2, Edit2, Check,
   Activity, Moon, Sun, ArrowUpRight, Trophy, Flame, Scale, Play,
-  RotateCcw, PartyPopper, Target, Sparkles
+  RotateCcw, PartyPopper, Target, Sparkles, Loader2
 } from "lucide-react";
 import { 
   AreaChart, Area, XAxis, Tooltip as RechartsTooltip, ResponsiveContainer 
@@ -14,15 +14,25 @@ import {
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
 
+// --- BACKEND ACTIONS ---
+import { getFitnessDay, saveFitnessDay, getFitnessHistory } from "@/lib/actions/fitness";
+
 /** * ------------------------------------------------------------------
- * FITNESS STUDIO - V9.0 (FINAL POLISHED BUILD)
+ * FITNESS STUDIO - V10.3 (STREAK GRID FIXED + HEADER FIXED)
  * ------------------------------------------------------------------
  */
 
 // --- UTILS ---
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 const generateId = () => Math.random().toString(36).substring(2, 9);
-const formatDateKey = (date: Date) => date.toISOString().split("T")[0];
+
+// --- FIXED DATE FORMATTER (LOCAL TIMEZONE) ---
+const formatDateKey = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
 
 // --- STYLES ---
 const globalStyles = `
@@ -50,6 +60,7 @@ interface DayData {
   waterGoal: number; waterIntake: number;
   stepGoal: number; stepCount: number;
   bodyWeight: number | null;
+  targetWeight: number | null;
 }
 interface UserSettings { targetWeight: number; }
 
@@ -57,305 +68,368 @@ const DEFAULT_MACROS: Record<MacroKey, number> = { cals: 2500, p: 180, c: 250, f
 
 export default function FitnessStudio() {
   const [selectedDate, setSelectedDate] = useState(new Date());
-  const dateKey = formatDateKey(selectedDate);
-
-  const [db, setDb] = useState<Record<string, DayData>>(() => ({
-    [dateKey]: {
-      date: dateKey, isRestDay: false, sessions: [], macroGoal: DEFAULT_MACROS, meals: [],
-      waterGoal: 3000, waterIntake: 0, stepGoal: 10000, stepCount: 0, bodyWeight: null
-    }
-  }));
+  const dateKey = useMemo(() => formatDateKey(selectedDate), [selectedDate]);
   
-  const [settings, setSettings] = useState<UserSettings>({ targetWeight: 75 });
+  // Local cache
+  const [db, setDb] = useState<Record<string, DayData>>({});
+  const [isLoading, setIsLoading] = useState(false);
+  const [history, setHistory] = useState<DayData[]>([]); 
+  
   const [activeModal, setActiveModal] = useState<string | null>(null);
   const [calendarOpen, setCalendarOpen] = useState(false);
+  const [settings, setSettings] = useState({ targetWeight: 75 });
 
-  const currentDay: DayData = db[dateKey] || {
-    date: dateKey, isRestDay: false, sessions: [], macroGoal: DEFAULT_MACROS, meals: [],
-    waterGoal: 3000, waterIntake: 0, stepGoal: 10000, stepCount: 0, bodyWeight: null
-  };
+  // Debounce Ref
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
+  // --- 1. FETCH DATA ---
+  useEffect(() => {
+    const loadData = async () => {
+      if (!db[dateKey]) setIsLoading(true);
+      
+      try {
+        const [dayData, historyData] = await Promise.all([
+          getFitnessDay(dateKey),
+          getFitnessHistory()
+        ]);
+
+        if (dayData) {
+          setDb(prev => ({ ...prev, [dateKey]: { ...dayData, date: dateKey } as unknown as DayData }));
+          if ((dayData as any).targetWeight) {
+             setSettings({ targetWeight: (dayData as any).targetWeight });
+          }
+        } else {
+          setDb(prev => ({
+            ...prev,
+            [dateKey]: {
+              date: dateKey, isRestDay: false, sessions: [], macroGoal: DEFAULT_MACROS, meals: [],
+              waterGoal: 3000, waterIntake: 0, stepGoal: 10000, stepCount: 0, bodyWeight: null, targetWeight: 75
+            }
+          }));
+        }
+
+        if (historyData) setHistory(historyData as unknown as DayData[]);
+      } catch (error) {
+        console.error("Failed to load fitness data", error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dateKey]);
+
+  // --- 2. UPDATE & AUTO-SAVE ---
   const updateDay = (updates: Partial<DayData>) => {
     setDb(prev => {
-      const existing = prev[dateKey] || currentDay;
-      return { ...prev, [dateKey]: { ...existing, ...updates } };
+      const existing = prev[dateKey] || {
+        date: dateKey, isRestDay: false, sessions: [], macroGoal: DEFAULT_MACROS, meals: [],
+        waterGoal: 3000, waterIntake: 0, stepGoal: 10000, stepCount: 0, bodyWeight: null, targetWeight: 75
+      };
+      const updatedDay = { ...existing, ...updates };
+      
+      if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+      saveTimeoutRef.current = setTimeout(async () => {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await saveFitnessDay(dateKey, updatedDay as any); 
+      }, 1000);
+
+      return { ...prev, [dateKey]: updatedDay };
     });
   };
+  
+  const updateSettings = (newSettings: { targetWeight: number }) => {
+      setSettings(newSettings);
+      updateDay({ targetWeight: newSettings.targetWeight });
+  };
 
-  const weightHistory = Object.values(db)
-    .filter(d => d.bodyWeight !== null)
-    .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
-    .map(d => ({ date: d.date.slice(5), weight: d.bodyWeight }));
+  const currentDay = db[dateKey] || {
+    date: dateKey, isRestDay: false, sessions: [], macroGoal: DEFAULT_MACROS, meals: [],
+    waterGoal: 3000, waterIntake: 0, stepGoal: 10000, stepCount: 0, bodyWeight: null, targetWeight: 75
+  };
+
+  const weightHistory = useMemo(() => {
+    const source = history.length > 0 ? history : Object.values(db);
+    return source
+      .filter((d) => d.bodyWeight !== null)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime())
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .map((d: any) => ({ date: d.date.slice(5), weight: d.bodyWeight }));
+  }, [history, db]);
 
   const streakInfo = useMemo(() => {
-    const dates = Object.keys(db).sort().reverse();
+    const source = history.length > 0 ? [...history] : Object.values(db);
     const today = formatDateKey(new Date());
     let currentStreak = 0;
     
-    for (const d of dates) {
-      if (d > today) continue;
-      const day = db[d];
-      const isActive = day.sessions.length > 0 || day.isRestDay || (day.stepGoal > 0 && day.stepCount >= day.stepGoal && day.waterGoal > 0 && day.waterIntake >= day.waterGoal);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    source.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+    for (const day of source) {
+      if (day.date > today) continue;
+      const isActive = day.sessions?.length > 0 || day.isRestDay || (day.stepGoal > 0 && day.stepCount >= day.stepGoal && day.waterGoal > 0 && day.waterIntake >= day.waterGoal);
       if (isActive) currentStreak++;
-      else if (d !== today) break;
+      else if (day.date !== today) break;
     }
     return { current: currentStreak, max: Math.max(currentStreak, 5) };
-  }, [db]);
+  }, [history, db]);
 
   return (
     <div className={cn(
       "min-h-screen font-sans transition-colors duration-500 overflow-x-hidden relative",
-      "bg-zinc-50 text-zinc-900 dark:bg-[#050505] dark:text-zinc-100",
-      currentDay.isRestDay && "grayscale opacity-90"
+      "bg-zinc-50 text-zinc-900 dark:bg-[#050505] dark:text-zinc-100"
     )}>
-      <style>{globalStyles}</style>
-      
-      {/* 1. BACKGROUND */}
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]" />
-        <div className="absolute top-0 right-0 w-full h-1/2 bg-linear-to-b from-blue-50/50 to-transparent dark:from-blue-950/20 dark:to-transparent" />
-      </div>
-
-      <div className="relative z-10 max-w-7xl mx-auto p-4 md:p-8 space-y-10">
+      <div className={cn("transition-all duration-500", currentDay.isRestDay && "grayscale opacity-80 pointer-events-none select-none")} >
+        <style>{globalStyles}</style>
         
-        {/* 2. HEADER */}
-        <header className="flex flex-col md:flex-row justify-between items-end gap-6 pb-6 border-b border-zinc-200 dark:border-white/10">
-          <motion.div 
-            initial={{ opacity: 0, x: -20 }} 
-            animate={{ opacity: 1, x: 0 }}
-            className="group cursor-default"
-          >
-            <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 mb-1">
-              <Activity size={16} />
-              <span className="text-[11px] font-black tracking-[0.3em] uppercase">Athletic OS v9.0</span>
-            </div>
-            <motion.h1 
-              className="text-5xl md:text-7xl font-black italic  text-zinc-900 dark:text-white flex gap-3"
-              whileHover={{ x: 10 }}
-              transition={{ type: "keyframes", stiffness: 300 }}
-            >
-              <span className="text-transparent bg-clip-text bg-linear-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400">FITNESS</span>
-              <span className="text-zinc-400 dark:text-zinc-700">STUDIO</span>
-            </motion.h1>
-          </motion.div>
+        {/* 1. BACKGROUND */}
+        <div className="fixed inset-0 pointer-events-none z-0">
+          <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-[0.03]" />
+          <div className="absolute top-0 right-0 w-full h-1/2 bg-linear-to-b from-blue-50/50 to-transparent dark:from-blue-950/20 dark:to-transparent" />
+        </div>
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => updateDay({ isRestDay: !currentDay.isRestDay })}
-              className={cn(
-                "flex items-center gap-2 px-5 py-2.5 rounded-full border text-xs font-bold uppercase transition-all shadow-sm",
-                currentDay.isRestDay 
-                  ? "bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-500/50 dark:text-emerald-400" 
-                  : "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300 dark:bg-zinc-900 dark:border-white/10 dark:text-zinc-400 dark:hover:text-white"
-              )}
-            >
-              {currentDay.isRestDay ? <Moon size={14} /> : <Sun size={14} />}
-              {currentDay.isRestDay ? "Rest Day" : "Training Mode"}
-            </button>
-
-            <div className="relative">
-              <button 
-                onClick={() => setCalendarOpen(!calendarOpen)}
-                className="flex items-center gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 px-5 py-2.5 rounded-full hover:border-indigo-500/50 transition-all text-sm font-bold shadow-sm"
-              >
-                <CalendarIcon size={16} className="text-zinc-400" />
-                {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-              </button>
-              <AnimatePresence>
-                {calendarOpen && (
-                  <CalendarDropdown 
-                    current={selectedDate} 
-                    onSelect={(d) => { setSelectedDate(d); setCalendarOpen(false); }} 
-                  />
-                )}
-              </AnimatePresence>
-            </div>
-          </div>
-        </header>
-
-        {/* 3. DASHBOARD BENTO GRID */}
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 auto-rows-auto">
+        <div className="relative z-10 max-w-7xl mx-auto p-4 md:p-8 space-y-10">
           
-          {/* STREAK */}
-          <motion.div whileHover={{ scale: 1.02 }} onClick={() => setActiveModal('streak')} className="md:col-span-4 cursor-pointer group relative overflow-hidden bg-zinc-900 border border-zinc-800 p-6 rounded-4xl shadow-xl h-80 text-white">
-             {/* Background Image - Abstract Fire */}
-             <div 
-               className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:opacity-50 transition-opacity"
-               style={{ backgroundImage: "url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=1000&auto=format&fit=crop')" }}
-             />
-             <div className="absolute inset-0 bg-linear-to-t from-black via-black/40 to-transparent" />
-             
-             <div className="flex justify-between items-start mb-4 relative z-10">
-                <div className="p-3 bg-orange-500/20 rounded-2xl text-orange-400 border border-orange-500/20"><Flame size={20}/></div>
-                <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Streak</span>
-             </div>
-             <div className="relative z-10 mt-auto">
-                <div className="text-7xl font-black text-white tracking-tighter">{streakInfo.current}</div>
-                <div className="text-xs font-bold text-orange-400 uppercase mt-1">Days on Fire</div>
-                <div className="mt-6 flex gap-1">
-                   {Array.from({length: 10}).map((_,i) => (
-                      <div key={i} className={cn("flex-1 h-1.5 rounded-full transition-all", i < (streakInfo.current % 10) || (streakInfo.current >= 10 && i < 10) ? "bg-orange-500" : "bg-white/20")} />
-                   ))}
-                </div>
-             </div>
-          </motion.div>
+          {/* 2. HEADER */}
+          <header className="flex flex-col md:flex-row justify-between items-end gap-6 pb-6 border-b border-zinc-200 dark:border-white/10 pointer-events-auto">
+            <motion.div 
+              initial={{ opacity: 0, x: -20 }} 
+              animate={{ opacity: 1, x: 0 }}
+              className="group cursor-default"
+            >
+              <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 mb-1">
+                <Activity size={16} />
+                <span className="text-[11px] font-black tracking-[0.3em] uppercase">Athletic OS v10.2</span>
+                {isLoading && <Loader2 size={12} className="animate-spin text-zinc-400 ml-2" />}
+              </div>
+              <motion.h1 
+                // FIXED: Added pr-6 so 'S' doesn't cut
+                className="text-5xl md:text-7xl font-black italic tracking-tighter text-zinc-900 dark:text-white flex flex-wrap gap-x-3 gap-y-0 items-center pr-6 pb-2"
+                whileHover={{ x: 10 }}
+                transition={{ type: "spring", stiffness: 300 }}
+              >
+                <span className="text-transparent bg-clip-text bg-linear-to-r from-indigo-600 to-purple-600 dark:from-indigo-400 dark:to-purple-400">FITNESS</span>
+                <span className="text-zinc-400 dark:text-zinc-700">STUDIO</span>
+              </motion.h1>
+            </motion.div>
 
-          {/* WORKOUT SUMMARY */}
-          <motion.div whileHover={{ scale: 1.01 }} onClick={() => setActiveModal('workout')} className="md:col-span-8 cursor-pointer group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 p-8 rounded-4xl relative overflow-hidden shadow-2xl h-80">
-             {/* Background Image - Gym - Visible in both modes */}
-             <div 
-               className="absolute inset-0 w-full h-full bg-cover bg-center opacity-10 dark:opacity-30 group-hover:scale-105 transition-transform duration-700"
-               style={{ backgroundImage: "url('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1000&auto=format&fit=crop')" }}
-             />
-             {/* Gradient Overlay for Text Readability */}
-             <div className="absolute inset-0 bg-linear-to-r from-white/90 via-white/60 to-transparent dark:from-black/90 dark:via-black/60 dark:to-transparent" />
-             
-             <div className="relative z-10 flex justify-between items-center h-full">
-                <div>
-                   <div className="flex items-center gap-3 mb-4">
-                      <div className="p-3 bg-purple-500/10 rounded-xl text-purple-600 dark:text-purple-400 border border-purple-500/20"><Dumbbell size={28} /></div>
-                      <h2 className="text-4xl font-black italic uppercase text-zinc-900 dark:text-white tracking-tight">Workout Lab</h2>
-                   </div>
-                   <div className="space-y-2">
-                      <p className="text-xl text-zinc-600 dark:text-zinc-300 font-medium">
-                         {currentDay.sessions.length > 0 ? `${currentDay.sessions.length} Session(s) Done` : "Start Your Grind"}
-                      </p>
-                      <div className="flex gap-2">
-                         {currentDay.sessions.length > 0 ? (
-                            <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-lg text-xs font-bold uppercase">{currentDay.sessions[0].name}</span>
-                         ) : (
-                            <span className="px-3 py-1 bg-zinc-200 dark:bg-zinc-800 rounded-lg text-xs font-bold text-zinc-500 uppercase">Ready</span>
-                         )}
-                      </div>
-                   </div>
-                </div>
-                <div className="h-24 w-24 bg-white/50 dark:bg-white/10 rounded-full flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-all duration-500 text-zinc-400 dark:text-zinc-500 border border-zinc-200 dark:border-white/10 backdrop-blur-md">
-                   <ArrowUpRight size={40} />
-                </div>
-             </div>
-          </motion.div>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => updateDay({ isRestDay: !currentDay.isRestDay })}
+                className={cn(
+                  "flex items-center gap-2 px-5 py-2.5 rounded-full border text-xs font-bold uppercase transition-all shadow-sm pointer-events-auto",
+                  currentDay.isRestDay 
+                    ? "bg-emerald-100 border-emerald-300 text-emerald-700 dark:bg-emerald-900/30 dark:border-emerald-500/50 dark:text-emerald-400" 
+                    : "bg-white border-zinc-200 text-zinc-600 hover:border-zinc-300 dark:bg-zinc-900 dark:border-white/10 dark:text-zinc-400 dark:hover:text-white"
+                )}
+              >
+                {currentDay.isRestDay ? <Moon size={14} /> : <Sun size={14} />}
+                {currentDay.isRestDay ? "Rest Day Active" : "Training Mode"}
+              </button>
 
-          {/* DIET */}
-          <motion.div whileHover={{ scale: 1.02 }} onClick={() => setActiveModal('diet')} className="md:col-span-6 lg:col-span-4 cursor-pointer group bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-white/5 p-6 rounded-4xl hover:border-orange-500/50 transition-all shadow-lg relative overflow-hidden h-65">
-             <div 
-               className="absolute inset-0 w-full h-full bg-cover bg-center opacity-5 dark:opacity-20 group-hover:opacity-10 dark:group-hover:opacity-30 transition-opacity"
-               style={{ backgroundImage: "url('https://images.unsplash.com/photo-1490645935967-10de6ba17061?q=80&w=1000&auto=format&fit=crop')" }}
-             />
-             
-             <div className="flex justify-between items-start mb-4 relative z-10">
-                <div className="p-3 bg-orange-100 dark:bg-orange-500/10 rounded-2xl text-orange-600 dark:text-orange-500 border border-orange-500/20"><Utensils size={20}/></div>
-                <span className="text-[10px] font-bold uppercase text-zinc-400">Nutrition</span>
-             </div>
-             
-             <div className="relative z-10 mt-auto space-y-3">
-                <div className="flex justify-between items-baseline">
-                   <span className="text-4xl font-black text-zinc-900 dark:text-white">
-                      {currentDay.meals.reduce((acc, m) => acc + m.cals, 0)}
-                   </span>
-                   <span className="text-xs font-bold text-zinc-500 uppercase">/ {currentDay.macroGoal.cals} kcal</span>
-                </div>
-                
-                <div className="grid grid-cols-3 gap-2">
-                   {(['p', 'c', 'f'] as MacroKey[]).map((m) => {
-                      const total = currentDay.meals.reduce((acc, item) => acc + item[m], 0);
-                      const goal = currentDay.macroGoal[m];
-                      return (
-                         <div key={m} className="bg-white/50 dark:bg-black/30 p-2 rounded-xl border border-zinc-200 dark:border-white/5 text-center backdrop-blur-sm">
-                            <div className="text-[10px] font-bold uppercase text-zinc-500">{m}</div>
-                            <div className="text-sm font-black text-zinc-800 dark:text-zinc-200">{total}g</div>
-                            <div className="h-1 w-full bg-zinc-300 dark:bg-zinc-700 rounded-full mt-1 overflow-hidden">
-                               <div className={cn("h-full", m==='p'?'bg-blue-500':m==='c'?'bg-green-500':'bg-yellow-500')} style={{width: `${Math.min((total/goal)*100, 100)}%`}} />
-                            </div>
-                         </div>
-                      )
-                   })}
-                </div>
-             </div>
-          </motion.div>
+              <div className="relative pointer-events-auto">
+                <button 
+                  onClick={() => setCalendarOpen(!calendarOpen)}
+                  className="flex items-center gap-3 bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 px-5 py-2.5 rounded-full hover:border-indigo-500/50 transition-all text-sm font-bold shadow-sm"
+                >
+                  <CalendarIcon size={16} className="text-zinc-400" />
+                  {selectedDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </button>
+                <AnimatePresence>
+                  {calendarOpen && (
+                    <CalendarDropdown 
+                      current={selectedDate} 
+                      onSelect={(d) => { setSelectedDate(d); setCalendarOpen(false); }} 
+                    />
+                  )}
+                </AnimatePresence>
+              </div>
+            </div>
+          </header>
 
-          {/* WATER */}
-          <motion.div whileHover={{ scale: 1.02 }} onClick={() => setActiveModal('water')} className="md:col-span-6 lg:col-span-4 cursor-pointer group bg-blue-600 p-6 rounded-4xl relative overflow-hidden shadow-lg shadow-blue-500/20 h-65">
-             <div 
-               className="absolute inset-0 w-full h-full bg-cover bg-center opacity-30 mix-blend-overlay"
-               style={{ backgroundImage: "url('https://images.unsplash.com/photo-1548839140-29a749e1cf4d?q=80&w=1000&auto=format&fit=crop')" }}
-             />
-             <div className="relative z-10 text-white h-full flex flex-col justify-between">
-                <div className="flex justify-between items-start">
-                   <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md"><Droplets size={20}/></div>
-                   <span className="text-[10px] font-bold uppercase opacity-80">Hydration</span>
-                </div>
-                <div className="text-center">
-                   <div className="text-6xl font-black tracking-tighter drop-shadow-lg">{currentDay.waterIntake}</div>
-                   <div className="text-sm font-bold opacity-80 mt-1">/ {currentDay.waterGoal} ml</div>
-                </div>
-                <div className="h-4" /> 
-             </div>
-             {/* Liquid Wave */}
-             <motion.div 
-                animate={{ y: [0, -15, 0], rotate: [0, 2, 0] }} 
-                transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
-                className="absolute -bottom-10 left-[-20%] w-[140%] h-32 bg-white/20 rounded-[50%] blur-xl" 
-             />
-          </motion.div>
+          {/* 3. DASHBOARD BENTO GRID */}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 auto-rows-auto">
+            
+            {/* STREAK */}
+            <motion.div whileHover={{ scale: 1.02 }} onClick={() => !currentDay.isRestDay && setActiveModal('streak')} className="md:col-span-4 cursor-pointer group relative overflow-hidden bg-zinc-900 border border-zinc-800 p-6 rounded-4xl shadow-xl h-80 text-white pointer-events-auto">
+               <div 
+                 className="absolute inset-0 bg-cover bg-center opacity-40 group-hover:opacity-50 transition-opacity"
+                 style={{ backgroundImage: "url('https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?q=80&w=1000&auto=format&fit=crop')" }}
+               />
+               <div className="absolute inset-0 bg-linear-to-t from-black via-black/40 to-transparent" />
+               
+               <div className="flex justify-between items-start mb-4 relative z-10">
+                  <div className="p-3 bg-orange-500/20 rounded-2xl text-orange-400 border border-orange-500/20"><Flame size={20}/></div>
+                  <span className="text-[10px] font-bold uppercase tracking-widest text-zinc-400">Streak</span>
+               </div>
+               <div className="relative z-10 mt-auto">
+                  <div className="text-7xl font-black text-white tracking-tighter">{streakInfo.current}</div>
+                  <div className="text-xs font-bold text-orange-400 uppercase mt-1">Days on Fire</div>
+                  <div className="mt-6 flex gap-1">
+                     {Array.from({length: 10}).map((_,i) => (
+                        <div key={i} className={cn("flex-1 h-1.5 rounded-full transition-all", i < (streakInfo.current % 10) || (streakInfo.current >= 10 && i < 10) ? "bg-orange-500" : "bg-white/20")} />
+                     ))}
+                  </div>
+               </div>
+            </motion.div>
 
-          {/* STEPS */}
-          <motion.div whileHover={{ scale: 1.02 }} onClick={() => setActiveModal('steps')} className="md:col-span-12 lg:col-span-4 cursor-pointer group bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-white/5 p-6 rounded-4xl hover:border-emerald-500/50 transition-all shadow-lg dark:shadow-none relative overflow-hidden h-65 flex flex-col justify-between">
-             <div 
-               className="absolute inset-0 w-full h-full bg-cover bg-center opacity-10 dark:opacity-20 group-hover:opacity-15 dark:group-hover:opacity-30 transition-opacity grayscale"
-               style={{ backgroundImage: "url('https://images.unsplash.com/photo-1452626038306-9aae5e071dd3?q=80&w=1000&auto=format&fit=crop')" }}
-             />
-             <div className="absolute inset-0 bg-linear-to-t from-zinc-100/50 via-transparent to-transparent dark:from-black/50 dark:via-transparent dark:to-transparent" />
+            {/* WORKOUT SUMMARY */}
+            <motion.div whileHover={{ scale: 1.01 }} onClick={() => !currentDay.isRestDay && setActiveModal('workout')} className="md:col-span-8 cursor-pointer group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 p-8 rounded-4xl relative overflow-hidden shadow-2xl h-80 pointer-events-auto">
+               <div 
+                 className="absolute inset-0 w-full h-full bg-cover bg-center opacity-10 dark:opacity-30 group-hover:scale-105 transition-transform duration-700 mix-blend-multiply dark:mix-blend-overlay"
+                 style={{ backgroundImage: "url('https://images.unsplash.com/photo-1534438327276-14e5300c3a48?q=80&w=1000&auto=format&fit=crop')" }}
+               />
+               <div className="absolute inset-0 bg-linear-to-r from-white/90 via-white/50 to-transparent dark:from-black/90 dark:via-black/50 dark:to-transparent" />
+               
+               <div className="relative z-10 flex justify-between items-center h-full">
+                  <div>
+                     <div className="flex items-center gap-3 mb-4">
+                        <div className="p-3 bg-purple-500/10 rounded-xl text-purple-600 dark:text-purple-400 border border-purple-500/20"><Dumbbell size={28} /></div>
+                        <h2 className="text-4xl font-black italic uppercase text-zinc-900 dark:text-white tracking-tight">Workout Lab</h2>
+                     </div>
+                     <div className="space-y-2">
+                        <p className="text-xl text-zinc-600 dark:text-zinc-300 font-medium">
+                           {currentDay.sessions.length > 0 ? `${currentDay.sessions.length} Session(s) Done` : "Start Your Grind"}
+                        </p>
+                        <div className="flex gap-2">
+                           {currentDay.sessions.length > 0 ? (
+                              <span className="px-3 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-lg text-xs font-bold uppercase">{currentDay.sessions[0].name}</span>
+                           ) : (
+                              <span className="px-3 py-1 bg-zinc-200 dark:bg-zinc-800 rounded-lg text-xs font-bold text-zinc-500 uppercase">Ready</span>
+                           )}
+                        </div>
+                     </div>
+                  </div>
+                  <div className="h-24 w-24 bg-white/50 dark:bg-white/10 rounded-full flex items-center justify-center group-hover:bg-purple-600 group-hover:text-white transition-all duration-500 text-zinc-400 dark:text-zinc-500 border border-zinc-200 dark:border-white/10 backdrop-blur-md">
+                     <ArrowUpRight size={40} />
+                  </div>
+               </div>
+            </motion.div>
 
-             <div className="flex justify-between items-start mb-4 relative z-10">
-                <div className="p-3 bg-emerald-100 dark:bg-emerald-500/10 rounded-2xl text-emerald-600 dark:text-emerald-500 border border-emerald-500/20"><Footprints size={20}/></div>
-                <span className="text-[10px] font-bold uppercase text-zinc-500">Activity</span>
-             </div>
-             <div className="relative z-10 flex items-end justify-between">
-                <div>
-                   <div className="text-5xl font-black text-zinc-900 dark:text-white">{currentDay.stepCount}</div>
-                   <div className="text-xs text-zinc-500 font-bold mt-1">Goal: {currentDay.stepGoal}</div>
-                </div>
-                {/* Speedometer Visual */}
-                <div className="w-16 h-16 relative">
-                   <svg className="w-full h-full" viewBox="0 0 100 100">
-                      <path d="M 10 50 A 40 40 0 1 1 90 50" fill="none" stroke="currentColor" strokeWidth="8" className="text-zinc-200 dark:text-zinc-800" strokeLinecap="round" />
-                      <path d="M 10 50 A 40 40 0 1 1 90 50" fill="none" stroke="#10b981" strokeWidth="8" strokeDasharray={126} strokeDashoffset={126 - (126 * Math.min(currentDay.stepCount/currentDay.stepGoal, 1))} strokeLinecap="round" className="transition-all duration-1000" />
-                   </svg>
-                </div>
-             </div>
-          </motion.div>
+            {/* DIET */}
+            <motion.div whileHover={{ scale: 1.02 }} onClick={() => !currentDay.isRestDay && setActiveModal('diet')} className="md:col-span-6 lg:col-span-4 cursor-pointer group bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-white/5 p-6 rounded-4xl hover:border-orange-500/50 transition-all shadow-lg relative overflow-hidden h-65 pointer-events-auto">
+               <div 
+                 className="absolute inset-0 w-full h-full bg-cover bg-center opacity-5 dark:opacity-20 group-hover:opacity-10 dark:group-hover:opacity-30 transition-opacity"
+                 style={{ backgroundImage: "url('https://images.unsplash.com/photo-1490645935967-10de6ba17061?q=80&w=1000&auto=format&fit=crop')" }}
+               />
+               
+               <div className="flex justify-between items-start mb-4 relative z-10">
+                  <div className="p-3 bg-orange-100 dark:bg-orange-500/10 rounded-2xl text-orange-600 dark:text-orange-500 border border-orange-500/20"><Utensils size={20}/></div>
+                  <span className="text-[10px] font-bold uppercase text-zinc-400">Nutrition</span>
+               </div>
+               
+               <div className="relative z-10 mt-auto space-y-3">
+                  <div className="flex justify-between items-baseline">
+                     <span className="text-4xl font-black text-zinc-900 dark:text-white">
+                        {currentDay.meals.reduce((acc, m) => acc + m.cals, 0)}
+                     </span>
+                     <span className="text-xs font-bold text-zinc-500 uppercase">/ {currentDay.macroGoal.cals} kcal</span>
+                  </div>
+                  
+                  <div className="grid grid-cols-3 gap-2">
+                     {(['p', 'c', 'f'] as MacroKey[]).map((m) => {
+                        const total = currentDay.meals.reduce((acc, item) => acc + item[m], 0);
+                        const goal = currentDay.macroGoal[m];
+                        return (
+                           <div key={m} className="bg-white/50 dark:bg-black/30 p-2 rounded-xl border border-zinc-200 dark:border-white/5 text-center backdrop-blur-sm">
+                              <div className="text-[10px] font-bold uppercase text-zinc-500">{m}</div>
+                              <div className="text-sm font-black text-zinc-800 dark:text-zinc-200">{total}g</div>
+                              <div className="h-1 w-full bg-zinc-300 dark:bg-zinc-700 rounded-full mt-1 overflow-hidden">
+                                 <div className={cn("h-full", m==='p'?'bg-blue-500':m==='c'?'bg-green-500':'bg-yellow-500')} style={{width: `${Math.min((total/goal)*100, 100)}%`}} />
+                              </div>
+                           </div>
+                        )
+                     })}
+                  </div>
+               </div>
+            </motion.div>
 
-          {/* WEIGHT */}
-          <motion.div whileHover={{ scale: 1.01 }} onClick={() => setActiveModal('weight')} className="md:col-span-12 cursor-pointer group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/5 p-6 rounded-4xl hover:border-pink-500/50 transition-all shadow-lg dark:shadow-none h-65 flex flex-col relative overflow-hidden">
-             <div 
-               className="absolute inset-0 w-full h-full bg-cover bg-center opacity-5 dark:opacity-20 mix-blend-multiply dark:mix-blend-overlay"
-               style={{ backgroundImage: "url('https://images.unsplash.com/photo-1576678927484-cc907957088c?q=80&w=1000&auto=format&fit=crop')" }}
-             />
-             <div className="flex justify-between items-center mb-4 relative z-10">
-                <div className="flex items-center gap-2 text-pink-500">
-                   <div className="p-2 bg-pink-500/10 rounded-xl"><Scale size={20} /></div>
-                   <span className="text-xs font-bold uppercase text-zinc-500">Weight Trend</span>
-                </div>
-                <div className="text-center">
-                   <div className="text-3xl font-black text-zinc-900 dark:text-white">{currentDay.bodyWeight || "--"} <span className="text-lg font-medium text-zinc-500">kg</span></div>
-                   <div className="text-[10px] font-bold text-zinc-400 uppercase">Target: {settings.targetWeight} kg</div>
-                </div>
-             </div>
-             <div className="flex-1 w-full relative z-10">
-                <ResponsiveContainer width="100%" height="100%">
-                   <AreaChart data={Object.values(db).map(d => ({ date: d.date, weight: d.bodyWeight })).filter(d => d.weight)}>
-                      <defs>
-                         <linearGradient id="gWeight" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#ec4899" stopOpacity={0.3}/>
-                            <stop offset="95%" stopColor="#ec4899" stopOpacity={0}/>
-                         </linearGradient>
-                      </defs>
-                      <Area type="monotone" dataKey="weight" stroke="#ec4899" fill="url(#gWeight)" strokeWidth={3} />
-                   </AreaChart>
-                </ResponsiveContainer>
-             </div>
-          </motion.div>
+            {/* WATER */}
+            <motion.div whileHover={{ scale: 1.02 }} onClick={() => !currentDay.isRestDay && setActiveModal('water')} className="md:col-span-6 lg:col-span-4 cursor-pointer group bg-blue-600 p-6 rounded-4xl relative overflow-hidden shadow-lg shadow-blue-500/20 h-65 pointer-events-auto">
+               <div 
+                 className="absolute inset-0 w-full h-full bg-cover bg-center opacity-30 mix-blend-overlay"
+                 style={{ backgroundImage: "url('https://images.unsplash.com/photo-1548839140-29a749e1cf4d?q=80&w=1000&auto=format&fit=crop')" }}
+               />
+               <div className="relative z-10 text-white h-full flex flex-col justify-between">
+                  <div className="flex justify-between items-start">
+                     <div className="p-3 bg-white/20 rounded-2xl backdrop-blur-md"><Droplets size={20}/></div>
+                     <span className="text-[10px] font-bold uppercase opacity-80">Hydration</span>
+                  </div>
+                  <div className="text-center">
+                     <div className="text-6xl font-black tracking-tighter drop-shadow-lg">{currentDay.waterIntake}</div>
+                     <div className="text-sm font-bold opacity-80 mt-1">/ {currentDay.waterGoal} ml</div>
+                  </div>
+                  <div className="h-4" /> 
+               </div>
+               {/* Liquid Wave */}
+               <motion.div 
+                  animate={{ y: [0, -15, 0], rotate: [0, 2, 0] }} 
+                  transition={{ duration: 6, repeat: Infinity, ease: "easeInOut" }}
+                  className="absolute -bottom-10 left-[-20%] w-[140%] h-32 bg-white/20 rounded-[50%] blur-xl" 
+               />
+            </motion.div>
 
+            {/* STEPS */}
+            <motion.div whileHover={{ scale: 1.02 }} onClick={() => !currentDay.isRestDay && setActiveModal('steps')} className="md:col-span-12 lg:col-span-4 cursor-pointer group bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-white/5 p-6 rounded-4xl hover:border-emerald-500/50 transition-all shadow-lg dark:shadow-none relative overflow-hidden h-65 flex flex-col justify-between pointer-events-auto">
+               <div 
+                 className="absolute inset-0 w-full h-full bg-cover bg-center opacity-10 dark:opacity-20 group-hover:opacity-15 dark:group-hover:opacity-30 transition-opacity grayscale mix-blend-multiply dark:mix-blend-overlay"
+                 style={{ backgroundImage: "url('https://images.unsplash.com/photo-1452626038306-9aae5e071dd3?q=80&w=1000&auto=format&fit=crop')" }}
+               />
+               <div className="absolute inset-0 bg-linear-to-t from-zinc-100/50 via-transparent to-transparent dark:from-black/50 dark:via-transparent dark:to-transparent" />
+
+               <div className="flex justify-between items-start mb-4 relative z-10">
+                  <div className="p-3 bg-emerald-100 dark:bg-emerald-500/10 rounded-2xl text-emerald-600 dark:text-emerald-500 border border-emerald-500/20"><Footprints size={20}/></div>
+                  <span className="text-[10px] font-bold uppercase text-zinc-500">Activity</span>
+               </div>
+               <div className="relative z-10 flex items-end justify-between">
+                  <div>
+                     <div className="text-5xl font-black text-zinc-900 dark:text-white">{currentDay.stepCount}</div>
+                     <div className="text-xs text-zinc-500 font-bold mt-1">Goal: {currentDay.stepGoal}</div>
+                  </div>
+                  {/* Speedometer Visual */}
+                  <div className="w-16 h-16 relative">
+                     <svg className="w-full h-full" viewBox="0 0 100 100">
+                        <path d="M 10 50 A 40 40 0 1 1 90 50" fill="none" stroke="currentColor" strokeWidth="8" className="text-zinc-200 dark:text-zinc-800" strokeLinecap="round" />
+                        <path d="M 10 50 A 40 40 0 1 1 90 50" fill="none" stroke="#10b981" strokeWidth="8" strokeDasharray={126} strokeDashoffset={126 - (126 * Math.min(currentDay.stepCount/currentDay.stepGoal, 1))} strokeLinecap="round" className="transition-all duration-1000" />
+                     </svg>
+                  </div>
+               </div>
+            </motion.div>
+
+            {/* WEIGHT */}
+            <motion.div whileHover={{ scale: 1.01 }} onClick={() => !currentDay.isRestDay && setActiveModal('weight')} className="md:col-span-12 cursor-pointer group bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-white/5 p-6 rounded-4xl hover:border-pink-500/50 transition-all shadow-lg dark:shadow-none h-65 flex flex-col relative overflow-hidden pointer-events-auto">
+               <div 
+                 className="absolute inset-0 w-full h-full bg-cover bg-center opacity-5 dark:opacity-20 mix-blend-multiply dark:mix-blend-overlay"
+                 style={{ backgroundImage: "url('https://images.unsplash.com/photo-1576678927484-cc907957088c?q=80&w=1000&auto=format&fit=crop')" }}
+               />
+               <div className="flex justify-between items-center mb-4 relative z-10">
+                  <div className="flex items-center gap-2 text-pink-500">
+                     <div className="p-2 bg-pink-500/10 rounded-xl"><Scale size={20} /></div>
+                     <span className="text-xs font-bold uppercase text-zinc-500">Weight Trend</span>
+                  </div>
+                  <div className="text-center">
+                     <div className="text-3xl font-black text-zinc-900 dark:text-white">{currentDay.bodyWeight || "--"} <span className="text-lg font-medium text-zinc-500">kg</span></div>
+                     <div className="text-[10px] font-bold text-zinc-400 uppercase">Target: {settings.targetWeight} kg</div>
+                  </div>
+               </div>
+               <div className="flex-1 w-full relative z-10">
+                  <ResponsiveContainer width="100%" height="100%">
+                     <AreaChart data={weightHistory}>
+                        <defs>
+                           <linearGradient id="gWeight" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="5%" stopColor="#ec4899" stopOpacity={0.3}/>
+                              <stop offset="95%" stopColor="#ec4899" stopOpacity={0}/>
+                           </linearGradient>
+                        </defs>
+                        <Area type="monotone" dataKey="weight" stroke="#ec4899" fill="url(#gWeight)" strokeWidth={3} />
+                     </AreaChart>
+                  </ResponsiveContainer>
+               </div>
+            </motion.div>
+
+          </div>
         </div>
       </div>
 
@@ -381,9 +455,9 @@ export default function FitnessStudio() {
                   {activeModal === 'diet' && <DietModal day={currentDay} updateDay={updateDay} />}
                   {activeModal === 'water' && <WaterModal day={currentDay} updateDay={updateDay} />}
                   {activeModal === 'steps' && <StepsModal day={currentDay} updateDay={updateDay} />}
-                  {activeModal === 'weight' && <WeightModal day={currentDay} updateDay={updateDay} history={weightHistory} settings={settings} updateSettings={setSettings} />}
+                  {activeModal === 'weight' && <WeightModal day={currentDay} updateDay={updateDay} history={weightHistory} settings={settings} updateSettings={updateSettings} />}
                   {activeModal === 'calendar' && <CalendarModal selected={selectedDate} onSelect={(d) => { setSelectedDate(d); setActiveModal(null); }} />}
-                  {activeModal === 'streak' && <StreakModal db={db} streakInfo={streakInfo} />}
+                  {activeModal === 'streak' && <StreakModal db={db} streakInfo={streakInfo} history={history} />}
                </div>
             </motion.div>
           </div>
@@ -394,9 +468,10 @@ export default function FitnessStudio() {
   );
 }
 
-// ============================================================================
-// FEATURE MODULES
-// ============================================================================
+// ... [WorkoutModal, DietModal, WaterModal, WeightModal, StepsModal, CalendarDropdown ... NO CHANGE] ...
+// (These are same as previous, just ensure they are included below)
+
+// ... [INCLUDED MODALS FOR COMPLETENESS] ...
 
 function WorkoutModal({ day, updateDay }: { day: DayData, updateDay: (updates: Partial<DayData>) => void }) {
    const [tab, setTab] = useState<'new' | 'history'>('new');
@@ -459,7 +534,6 @@ function WorkoutModal({ day, updateDay }: { day: DayData, updateDay: (updates: P
          )}
 
          {activeSession ? (
-            /* ACTIVE SESSION UI */
             <div className="space-y-6 animate-in slide-in-from-bottom-10">
                <div className="sticky top-0 bg-white/90 dark:bg-zinc-950/90 backdrop-blur-xl p-4 border-b border-zinc-200 dark:border-white/10 flex justify-between items-center z-20 rounded-xl shadow-sm">
                   <div>
@@ -542,7 +616,6 @@ function WorkoutModal({ day, updateDay }: { day: DayData, updateDay: (updates: P
                </div>
             </div>
          ) : tab === 'new' ? (
-            /* START SCREEN */
             <div className="grid grid-cols-2 gap-4 animate-in fade-in">
                <div className="col-span-2 bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-white/10 p-8 rounded-4xl">
                   <label className="text-xs font-bold uppercase text-zinc-500">Session Name</label>
@@ -558,7 +631,6 @@ function WorkoutModal({ day, updateDay }: { day: DayData, updateDay: (updates: P
                ))}
             </div>
          ) : (
-            /* HISTORY & EDITING */
             <div className="space-y-6">
                {day.sessions.length === 0 ? (
                   <div className="text-center py-20 text-zinc-500 font-bold">No sessions logged today.</div>
@@ -750,18 +822,17 @@ function WaterModal({ day, updateDay }: { day: DayData, updateDay: (updates: Par
    const [isEditing, setIsEditing] = useState(false);
    const [isSplash, setIsSplash] = useState(false);
    
-   // Logic to ensure 250ml shows clearly even on big goal
    const target = day.waterGoal || 3000;
    const current = day.waterIntake || 0;
-   // Minimum visual fill of 5% if any water added
-   const rawRatio = target > 0 ? Math.min(current / target, 1) : 0;
-   const visualRatio = current > 0 ? Math.max(rawRatio, 0.05) : 0;
-   const fillHeight = visualRatio * 200;
+   // FIX: Ensure fillHeight calculates correctly from 1ml
+   const fillRatio = target > 0 ? Math.min(current / target, 1) : 0;
+   const fillHeight = fillRatio * 200;
 
    // Trigger splash on click, not effect
    const addWater = (amt: number) => {
-      updateDay({ waterIntake: day.waterIntake + amt });
-      if (day.waterIntake + amt >= target) {
+      const newTotal = day.waterIntake + amt;
+      updateDay({ waterIntake: newTotal });
+      if (newTotal >= target && current < target) {
          setIsSplash(true);
          setTimeout(() => setIsSplash(false), 2000);
       }
@@ -930,8 +1001,7 @@ function StepsModal({ day, updateDay }: { day: DayData, updateDay: (updates: Par
                
                <Footprints size={48} className={cn("mb-4 transition-colors", goalMet ? "text-yellow-500" : "text-emerald-500")} />
                
-               {/* Fixed container width for large numbers */}
-               <div className="w-60 flex justify-center">
+               <div className="w-48 flex justify-center">
                    <input 
                       type="number" className="bg-transparent text-5xl md:text-6xl font-black text-zinc-900 dark:text-white text-center w-full outline-none" 
                       value={day.stepCount} onChange={e => updateDay({ stepCount: Number(e.target.value) })} 
@@ -1023,36 +1093,50 @@ function CalendarModal({ selected, onSelect }: { selected: Date, onSelect: (d: D
    );
 }
 
-function StreakModal({ db, streakInfo }: { db: Record<string, DayData>, streakInfo: { current: number, max: number } }) {
+// --- FIXED STREAK MODAL (NO SCROLL, COMPACT GRID, HISTORY AWARE) ---
+function StreakModal({ db, streakInfo, history }: { db: Record<string, DayData>, streakInfo: { current: number, max: number }, history: DayData[] }) {
    return (
-      <div className="space-y-6 text-center flex flex-col items-center justify-center h-full pb-8">
+      <div className="flex flex-col items-center justify-center h-full space-y-8 pb-4">
+         
+         {/* Flame Animation */}
          <div className="relative">
-            <div className="absolute inset-0 bg-orange-500/20 blur-[60px] rounded-full" />
-            <Flame size={100} className="text-orange-500 relative z-10" />
+            <div className="absolute inset-0 bg-orange-500/20 blur-[50px] rounded-full" />
+            <Flame size={80} className="text-orange-500 relative z-10" />
          </div>
-         <div>
-            <h2 className="text-8xl font-black text-zinc-900 dark:text-white">{streakInfo.current}</h2>
-            <p className="text-lg font-bold uppercase text-zinc-500 tracking-[0.5em] mt-2">Day Streak</p>
+
+         {/* Stats */}
+         <div className="text-center">
+            <h2 className="text-7xl font-black text-zinc-900 dark:text-white tracking-tighter">{streakInfo.current}</h2>
+            <p className="text-lg font-bold uppercase text-zinc-500 tracking-[0.3em] mt-1">Day Streak</p>
+            <div className="mt-2 inline-flex items-center gap-2 bg-emerald-100 dark:bg-emerald-900/30 px-3 py-1 rounded-full border border-emerald-200 dark:border-emerald-500/20">
+               <Trophy size={12} className="text-emerald-600 dark:text-emerald-400" />
+               <span className="text-xs font-bold text-emerald-600 dark:text-emerald-400">Best: {streakInfo.max} Days</span>
+            </div>
          </div>
          
-         {/* GitHub Grid - Compact (Last 35 days) */}
-         <div className="w-full flex justify-center">
-            <div className="grid grid-cols-7 gap-3">
+         {/* Compact GitHub Grid (7 cols x 5 rows = 35 days) */}
+         <div className="bg-zinc-100 dark:bg-zinc-900 p-6 rounded-3xl border border-zinc-200 dark:border-white/5">
+            <div className="grid grid-cols-7 gap-2">
                {Array.from({length: 35}).map((_, i) => {
                   const date = new Date();
                   date.setDate(date.getDate() - (34 - i));
                   const key = formatDateKey(date);
-                  const day = db[key];
-                  const isActive = day && (day.isRestDay || day.sessions.length > 0 || (day.waterIntake >= day.waterGoal && day.stepCount >= day.stepGoal));
+                  // Look in DB (current edits) OR History (past data)
+                  const day = db[key] || history.find((h: any) => h.date === key);
+                  
+                  // Logic for active day
+                  const isActive = day && (day.isRestDay || (day.sessions && day.sessions.length > 0) || (day.waterIntake >= day.waterGoal && day.stepCount >= day.stepGoal));
                   const isFuture = date > new Date();
                   
                   return (
                      <div 
                         key={i} 
                         className={cn(
-                           "w-8 h-8 rounded-lg transition-all hover:scale-125 border", 
-                           isActive ? "bg-orange-500 border-orange-400 shadow-[0_0_10px_rgba(249,115,22,0.5)]" : "bg-zinc-100 dark:bg-zinc-900 border-zinc-200 dark:border-white/5",
-                           isFuture && "opacity-20"
+                           "w-6 h-6 rounded-md transition-all", 
+                           isActive 
+                              ? "bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.4)] scale-110" 
+                              : "bg-zinc-300 dark:bg-zinc-800",
+                           isFuture && "opacity-0 pointer-events-none"
                         )} 
                         title={key} 
                      />
@@ -1060,12 +1144,11 @@ function StreakModal({ db, streakInfo }: { db: Record<string, DayData>, streakIn
                })}
             </div>
          </div>
-         <div className="max-w-md mx-auto bg-zinc-100 dark:bg-zinc-900 p-4 rounded-2xl border border-zinc-200 dark:border-white/5">
-            <div className="flex items-center gap-2 mb-2 text-zinc-500 text-xs font-bold uppercase">
-               <Sparkles size={14} className="text-yellow-500"/> Daily Requirements
-            </div>
-            <p className="text-sm text-zinc-600 dark:text-zinc-300 font-medium">
-               Complete a <strong>Workout</strong> OR meet both <strong>Water</strong> & <strong>Step</strong> goals to keep the fire burning.
+
+         {/* Footer Quote */}
+         <div className="max-w-xs text-center">
+            <p className="text-xs font-medium text-zinc-400">
+               &quot;Consistency is the only currency that matters.&quot;
             </p>
          </div>
       </div>
