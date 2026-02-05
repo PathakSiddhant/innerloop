@@ -3,9 +3,10 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
-  Trophy, Calendar, Clock, MapPin, Tv, Plus, Trash2, 
-  Swords, Shield, Zap, Sparkles, Loader2, AlertOctagon, 
-  Ticket, Edit2, X
+  Trophy, Calendar, Clock, Tv, Plus, Trash2, 
+  AlertOctagon, Edit2, X, Ticket,
+  Loader2,
+  Sparkles
 } from "lucide-react";
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
@@ -24,7 +25,7 @@ const BG_PATTERNS = {
     default: "https://images.unsplash.com/photo-1556056504-5c7696c4c28d?auto=format&fit=crop&w=2000&q=80"
 };
 
-export default function TheArenaV9() {
+export default function TheArenaFinal() {
   const [matches, setMatches] = useState<MatchData[]>([]);
   const [loading, setLoading] = useState(true);
   
@@ -33,14 +34,21 @@ export default function TheArenaV9() {
   const [editingMatch, setEditingMatch] = useState<MatchData | null>(null);
 
   const fetchData = useCallback(async () => {
-    setLoading(true);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const res: any = await getMatches();
-    setMatches(res || []);
-    setLoading(false);
+    // We don't set loading to true here to avoid the flash on every update if this is called frequently
+    // But for initial load it is handled by the initial state
+    try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const res: any = await getMatches();
+        setMatches(res || []);
+    } finally {
+        setLoading(false);
+    }
   }, []);
 
-  useEffect(() => { fetchData(); }, [fetchData]);
+  useEffect(() => { 
+      // This is safe because fetchData is async and state updates happen in the next tick
+      fetchData(); 
+  }, [fetchData]);
 
   const handleSave = async (data: MatchData) => {
       await upsertMatch(data);
@@ -68,31 +76,53 @@ export default function TheArenaV9() {
       
       {/* 1. BACKGROUND TEXTURES */}
       <div className="fixed inset-0 pointer-events-none z-0">
-         {/* Light Mode: Subtle Grass Texture */}
          <div className="absolute inset-0 bg-emerald-100/20 dark:opacity-0 mix-blend-multiply" />
-         {/* Dark Mode: Abstract Noise & Gradient */}
          <div className="absolute inset-0 opacity-0 dark:opacity-100 transition-opacity">
              <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10" />
-             <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-b from-blue-900/10 via-transparent to-black" />
+             <div className="absolute top-0 left-0 w-full h-full bg-linear-to-b from-blue-900/10 via-transparent to-black" />
          </div>
       </div>
 
       <div className="relative z-10 max-w-7xl mx-auto p-4 md:p-8 space-y-10">
         
-        {/* 2. HEADER (With Sidebar Spacing) */}
-        {/* Added pl-12 to ensure Sidebar Trigger isn't covered on mobile/desktop depending on layout */}
-        <header className="flex flex-col md:flex-row justify-between items-end border-b border-zinc-300 dark:border-white/10 pb-6 pt-4 pl-2 md:pl-0">
-            <div>
-                <div className="flex items-center gap-2 text-orange-600 dark:text-orange-500 font-bold text-xs tracking-[0.4em] uppercase mb-2">
-                    <Tv size={14} className="animate-pulse"/> Live Coverage
+        {/* 2. HEADER (ANIMATED & FIXED) */}
+        <header className="flex flex-col md:flex-row justify-between items-end border-b border-zinc-300 dark:border-white/10 pb-8 pt-6 pl-2 md:pl-0">
+            <div className="space-y-2">
+                <motion.div 
+                    initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} transition={{ duration: 0.5 }}
+                    className="flex items-center gap-3 text-orange-600 dark:text-orange-500 font-bold text-xs tracking-[0.4em] uppercase"
+                >
+                    <span className="relative flex h-3 w-3">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-orange-500"></span>
+                    </span>
+                    Live Command Center
+                </motion.div>
+                
+                <div className="overflow-hidden">
+                    <motion.h1 
+                        initial={{ y: 50, opacity: 0 }} 
+                        animate={{ y: 0, opacity: 1 }} 
+                        transition={{ duration: 0.6, ease: "easeOut" }}
+                        className="text-6xl md:text-8xl font-black italic uppercase tracking-tighter text-zinc-900 dark:text-white leading-[0.9] drop-shadow-xl"
+                    >
+                        GAME<span className="text-transparent bg-clip-text bg-linear-to-r from-orange-500 to-red-600 inline-block pb-2 hover:scale-105 transition-transform cursor-default origin-left">DAY</span>
+                    </motion.h1>
                 </div>
-                <h1 className="text-5xl md:text-7xl font-black italic uppercase tracking-tighter text-zinc-900 dark:text-white drop-shadow-sm">
-                    Game<span className="text-transparent bg-clip-text bg-gradient-to-r from-orange-500 to-red-600">Day</span>
-                </h1>
             </div>
-            <button onClick={() => { setEditingMatch(null); setShowModal(true); }} className="group bg-zinc-900 dark:bg-white text-white dark:text-black px-6 py-3 rounded-full font-black uppercase tracking-wider hover:scale-105 transition-all shadow-xl flex items-center gap-2">
-                <Plus size={18} className="group-hover:rotate-90 transition-transform"/> Book Fixture
-            </button>
+
+            <motion.button 
+                initial={{ scale: 0.8, opacity: 0 }} 
+                animate={{ scale: 1, opacity: 1 }} 
+                transition={{ delay: 0.3, type: "spring" }}
+                whileHover={{ scale: 1.05 }} 
+                whileTap={{ scale: 0.95 }}
+                onClick={() => { setEditingMatch(null); setShowModal(true); }} 
+                className="group bg-zinc-900 dark:bg-white text-white dark:text-black px-8 py-4 rounded-full font-black uppercase tracking-wider shadow-2xl flex items-center gap-3"
+            >
+                <Plus size={20} className="group-hover:rotate-90 transition-transform"/> 
+                <span>Book Fixture</span>
+            </motion.button>
         </header>
 
         {/* 3. HERO: NEXT MATCH */}
@@ -152,14 +182,13 @@ function HeroMatch({ match }: { match: MatchData }) {
     const bgImage = BG_PATTERNS[match.sport as keyof typeof BG_PATTERNS] || BG_PATTERNS.default;
     
     return (
-        <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} className="relative w-full h-[450px] rounded-[2.5rem] overflow-hidden group shadow-2xl border-4 border-white dark:border-white/10">
+        <motion.div initial={{opacity:0, y:20}} animate={{opacity:1, y:0}} className="relative w-full h-112.5 rounded-[2.5rem] overflow-hidden group shadow-2xl border-4 border-white dark:border-white/10">
             {/* Immersive BG */}
             <div 
                 className="absolute inset-0 bg-cover bg-center transition-transform duration-1000 group-hover:scale-105"
                 style={{ backgroundImage: `url(${bgImage})` }}
             />
-            {/* Gradient Overlay for Text Readability */}
-            <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
+            <div className="absolute inset-0 bg-linear-to-t from-black via-black/40 to-transparent" />
             
             {/* Conflict Alert */}
             {match.conflictTask && (
@@ -215,7 +244,7 @@ function MatchCard({ match, index, onDelete, onEdit }: { match: MatchData, index
         >
             {/* Background Texture */}
             <div className="absolute inset-0 bg-cover bg-center transition-transform duration-700 group-hover:scale-110" style={{ backgroundImage: `url(${bgImage})` }} />
-            <div className="absolute inset-0 bg-gradient-to-t from-zinc-900 via-zinc-900/80 to-transparent" />
+            <div className="absolute inset-0 bg-linear-to-t from-zinc-900 via-zinc-900/80 to-transparent" />
 
             <div className="absolute inset-0 p-6 flex flex-col justify-between z-10">
                 <div className="flex justify-between items-start">
@@ -280,9 +309,12 @@ function AddMatchModal({ onClose, onSave, initialData }: { onClose:()=>void, onS
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
             <motion.div initial={{scale:0.9, opacity:0}} animate={{scale:1, opacity:1}} className="bg-white dark:bg-[#09090b] w-full max-w-lg rounded-3xl p-8 border border-zinc-200 dark:border-white/10 shadow-2xl relative overflow-hidden">
-                <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-orange-500 to-red-600" />
+                <div className="absolute top-0 left-0 w-full h-1 bg-linear-to-r from-orange-500 to-red-600" />
                 <h2 className="text-2xl font-black uppercase mb-6 text-zinc-900 dark:text-white flex justify-between items-center">
-                    {initialData ? "Update Fixture" : "Book New Fixture"}
+                    <div className="flex items-center gap-2">
+                        <Ticket size={24} className="text-orange-500" />
+                        {initialData ? "Update Fixture" : "Book New Fixture"}
+                    </div>
                     <button onClick={onClose}><X size={20} className="text-zinc-400 hover:text-black dark:hover:text-white"/></button>
                 </h2>
                 
