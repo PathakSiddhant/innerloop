@@ -17,10 +17,10 @@ export interface TaskData {
   priority: "low" | "medium" | "high" | "urgent";
   energy: "low" | "medium" | "high";
   
-  // New Fields for V3
+  // Scheduling
   taskType: "fixed" | "flexible";
-  startTime?: string; // e.g. "09:00"
-  duration: number;
+  startTime?: string; // "09:00"
+  duration: number; // minutes
   progress: number; // 0-100
   
   date: string;
@@ -33,16 +33,27 @@ export async function getDailyTasks(dateStr: string) {
   const { userId } = await auth();
   if (!userId) return [];
   try {
-    return await db.select().from(tasks)
+    const data = await db.select().from(tasks)
       .where(and(eq(tasks.userId, userId), eq(tasks.date, dateStr)))
-      .orderBy(asc(tasks.startTime), desc(tasks.priority)); 
+      .orderBy(asc(tasks.startTime), desc(tasks.priority));
+    
+    // Explicit casting to match interface
+    return data as unknown as TaskData[]; 
   } catch (e) { return []; }
 }
 
-// 2. UPSERT TASK (Add or Update)
+// 2. UPSERT TASK
 export async function upsertTask(data: TaskData) {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
+
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Block creation in past
+  if (data.date < today && !data.id) {
+      return { success: false, error: "Cannot change history." };
+  }
+
   try {
     if (data.id) {
       await db.update(tasks).set({ ...data, updatedAt: new Date() }).where(eq(tasks.id, data.id));
@@ -54,13 +65,13 @@ export async function upsertTask(data: TaskData) {
   } catch (e) { return { success: false }; }
 }
 
-// 3. UPDATE PROGRESS & STATUS
+// 3. UPDATE PROGRESS
 export async function updateTaskProgress(id: string, progress: number, status: string, reason?: string) {
     const { userId } = await auth();
     if (!userId) return;
     
     await db.update(tasks).set({ 
-        progress: progress,
+        progress,
         status: status as any,
         skippedReason: reason || null,
         updatedAt: new Date()
@@ -76,39 +87,16 @@ export async function deleteTask(id: string) {
     revalidatePath("/tasks");
 }
 
-// 5. AI SMART SCHEDULER (Respects Fixed Tasks)
+// 5. AI SCHEDULER
 export async function aiAutoSchedule(currentTasks: TaskData[]) {
     try {
         const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
-        
         const prompt = `
-        You are an Elite Productivity Strategist. User has these tasks: ${JSON.stringify(currentTasks)}.
-        
-        GOAL: Optimize the day schedule.
-        RULES:
-        1. Keep 'fixed' tasks exactly at their 'startTime' (Do not move them).
-        2. Suggest efficient 'startTime' slots for 'flexible' tasks based on priority/energy.
-        3. Fill gaps between fixed tasks.
-        4. Provide a 'battlePlan' summary (1 sentence).
-        
-        Start scheduling from 09:00 unless a fixed task is earlier.
-        
-        Return JSON (no markdown):
-        {
-            "scheduleUpdates": [ { "id": "task_id", "startTime": "09:00" }, ... ],
-            "battlePlan": "string"
-        }
+        Productivity Strategist Mode. Tasks: ${JSON.stringify(currentTasks)}.
+        Goal: Optimize schedule from 09:00. Keep 'fixed' tasks.
+        Return JSON: { "scheduleUpdates": [ { "id": "task_id", "startTime": "09:00" } ], "battlePlan": "string" }
         `;
-
         const result = await model.generateContent(prompt);
-        const text = result.response.text();
-        
-        // Robust cleaning
-        const jsonStr = text.replace(/```json|```/g, "").trim();
-        return JSON.parse(jsonStr);
-
-    } catch (error) { 
-        console.error("AI Schedule Error:", error);
-        return null; 
-    }
+        return JSON.parse(result.response.text().replace(/```json|```/g, "").trim());
+    } catch (error) { return null; }
 }
