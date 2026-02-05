@@ -6,20 +6,20 @@ import { pgTable, text, integer, boolean, jsonb, real, uuid, timestamp } from "d
 export interface AIBlueprint {
   tagline: string;
   description: string;
-  techStack: { name: string; reason: string }[];
-  databaseSchema: { table: string; columns: string[] }[];
-  roadmap: { phase: string; weeks: string; tasks: string[] }[];
-  detialedExplantation: string;
+  techStack: any[]; 
+  databaseSchema: any[];
+  roadmap: any[];
+  brutalTruth: string; 
 }
 
 // Resource Helper Type
 export interface ResourceItem {
-    id: string;
-    type: "link" | "note" | "todo";
-    content: string;
-    url?: string;
-    isCompleted?: boolean;
-    createdAt: number; 
+  id: string;
+  type: "link" | "note" | "todo";
+  content: string;
+  url?: string;
+  isCompleted?: boolean;
+  createdAt: number;
 }
 
 // Fitness Types (Keep these so other pages don't break)
@@ -76,15 +76,15 @@ export const projects = pgTable("projects", {
 
 // 4. PROJECT RESOURCES (The Neural Link - Notes inside projects)
 export const projectResources = pgTable("project_resources", {
-    id: uuid("id").primaryKey().defaultRandom(),
-    projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
-    userId: text("user_id").notNull(),
-    type: text("type").notNull(), // 'link', 'note', 'todo'
-    title: text("title").notNull(),
-    content: text("content"), // For notes or link descriptions
-    url: text("url"), // For links
-    isCompleted: boolean("is_completed").default(false), // For todos
-    createdAt: timestamp("created_at").defaultNow(),
+  id: uuid("id").primaryKey().defaultRandom(),
+  projectId: uuid("project_id").references(() => projects.id, { onDelete: "cascade" }),
+  userId: text("user_id").notNull(),
+  type: text("type").notNull(), // 'link', 'note', 'todo'
+  title: text("title").notNull(),
+  content: text("content"), // For notes or link descriptions
+  url: text("url"), // For links
+  isCompleted: boolean("is_completed").default(false), // For todos
+  createdAt: timestamp("created_at").defaultNow(),
 });
 
 // 5. IDEA VAULT
@@ -108,4 +108,35 @@ export const devLogs = pgTable("dev_logs", {
   energyLevel: integer("energy_level"), // 1-10
   commitCount: integer("commit_count").default(0),
   createdAt: timestamp("created_at").defaultNow(),
+});
+
+// 7. TASKS (FINAL V3 - With Progress & TaskType)
+export const tasks = pgTable("tasks", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  title: text("title").notNull(),
+  
+  // Basic Details
+  description: text("description"), // Notes
+  category: text("category").default("work"), // work, personal, health, learning
+  priority: text("priority").default("medium"), // low, medium, high, urgent
+  
+  // Status & Progress Tracking (New)
+  status: text("status").default("pending"), // pending, in-progress, completed, skipped
+  progress: integer("progress").default(0), // 0 to 100%
+
+  // Scheduling Logic (New)
+  taskType: text("task_type").default("flexible"), // 'fixed' or 'flexible'
+  startTime: text("start_time"), // Nullable (only for fixed tasks)
+  duration: integer("duration").default(30), // minutes
+
+  energy: text("energy").default("medium"), // low, medium, high
+  date: text("date").notNull(), // YYYY-MM-DD
+  skippedReason: text("skipped_reason"),
+  
+  // Keeping order for drag-and-drop safety
+  order: integer("order").default(0),
+  
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
