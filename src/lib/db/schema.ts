@@ -110,7 +110,7 @@ export const devLogs = pgTable("dev_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// 7. TASKS (FINAL V3 - With Progress & TaskType)
+// 7. TASKS (V3 - Kept as is)
 export const tasks = pgTable("tasks", {
   id: uuid("id").primaryKey().defaultRandom(),
   userId: text("user_id").notNull(),
@@ -121,11 +121,11 @@ export const tasks = pgTable("tasks", {
   category: text("category").default("work"), // work, personal, health, learning
   priority: text("priority").default("medium"), // low, medium, high, urgent
   
-  // Status & Progress Tracking (New)
+  // Status & Progress Tracking
   status: text("status").default("pending"), // pending, in-progress, completed, skipped
   progress: integer("progress").default(0), // 0 to 100%
 
-  // Scheduling Logic (New)
+  // Scheduling Logic
   taskType: text("task_type").default("flexible"), // 'fixed' or 'flexible'
   startTime: text("start_time"), // Nullable (only for fixed tasks)
   duration: integer("duration").default(30), // minutes
@@ -139,4 +139,26 @@ export const tasks = pgTable("tasks", {
   
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// 8. SPORTS MATCHES (THE ARENA - V8 PURE SCHEDULE)
+export const sportsMatches = pgTable("sports_matches", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  userId: text("user_id").notNull(),
+  
+  // Event Info
+  sport: text("sport").notNull(), // 'football', 'cricket', 'f1'
+  title: text("title").notNull(), // "India vs Pakistan"
+  tournament: text("tournament"), // "World Cup"
+  platform: text("platform"), // "Hotstar"
+  
+  // Logistics
+  date: text("date").notNull(), // YYYY-MM-DD
+  time: text("time").notNull(), // HH:MM
+  duration: integer("duration").default(180), // Minutes (Important for conflict calc)
+  
+  // AI Prep
+  aiIntel: text("ai_intel"), // "Key Battle: Kohli vs Shaheen"
+  
+  createdAt: timestamp("created_at").defaultNow(),
 });
