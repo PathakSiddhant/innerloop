@@ -162,3 +162,37 @@ export const sportsMatches = pgTable("sports_matches", {
   
   createdAt: timestamp("created_at").defaultNow(),
 });
+
+// 9. ENTERTAINMENT (NEWLY ADDED)
+export const entertainment = pgTable("entertainment", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull(), // Clerk User ID
+   
+  // Core Info
+  title: text("title").notNull(),
+  type: text("type").notNull(), // 'movie', 'series', 'anime', 'documentary'
+  genre: text("genre").notNull(), // Stored as comma separated string e.g. "Sci-Fi, Thriller"
+  platform: text("platform"), // 'Netflix', 'Prime', 'Hotstar', etc.
+  language: text("language"),
+  image: text("image"), // URL for poster (optional)
+
+  // Watch Status
+  status: text("status").notNull().default("to_watch"), // 'watching', 'on_hold', 'completed', 'dropped', 'to_watch'
+   
+  // Progress Tracking (For Series/Anime)
+  currentSeason: integer("current_season").default(1),
+  currentEpisode: integer("current_episode").default(0),
+  totalSeasons: integer("total_seasons"),
+  totalEpisodes: integer("total_episodes"),
+
+  // Personal Touch
+  rating: integer("rating"), // 1-10
+  notes: text("notes"), // "Hold reason" or "Review"
+   
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Types for your frontend
+export type EntertainmentItem = typeof entertainment.$inferSelect;
+export type NewEntertainmentItem = typeof entertainment.$inferInsert;
