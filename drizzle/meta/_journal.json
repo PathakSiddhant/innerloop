@@ -8,6 +8,13 @@
       "when": 1770042994363,
       "tag": "0000_magenta_hercules",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1770404711049,
+      "tag": "0001_heavy_apocalypse",
+      "breakpoints": true
     }
   ]
 }

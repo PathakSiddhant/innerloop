@@ -163,7 +163,7 @@ export const sportsMatches = pgTable("sports_matches", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// 9. ENTERTAINMENT (NEWLY ADDED)
+// 9. ENTERTAINMENT 
 export const entertainment = pgTable("entertainment", {
   id: uuid("id").defaultRandom().primaryKey(),
   userId: text("user_id").notNull(), // Clerk User ID
@@ -193,6 +193,25 @@ export const entertainment = pgTable("entertainment", {
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
+// 10. VAULT (UPDATED PER INSTRUCTIONS)
+export const vault = pgTable("vault", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  userId: text("user_id").notNull(),
+  title: text("title").notNull(),
+  type: text("type").notNull(), // 'link', 'note', 'idea', 'resource'
+  category: text("category").notNull(), // 'Tech', 'Finance', etc.
+  tags: text("tags"), // Stored as comma-separated string "React, AI, Future"
+  description: text("description"),
+  source: text("source"),
+  isFavorite: boolean("is_favorite").default(false),
+  content: text("content"), // Detailed notes
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Types for your frontend
 export type EntertainmentItem = typeof entertainment.$inferSelect;
 export type NewEntertainmentItem = typeof entertainment.$inferInsert;
+
+export type VaultItem = typeof vault.$inferSelect;
+export type NewVaultItem = typeof vault.$inferInsert;
