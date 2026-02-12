@@ -1,43 +1,45 @@
+// mobile/src/lib/api.ts
 import { API_BASE_URL } from "./constants";
+import { FitnessData } from "./types"; 
 
-// Helper function to handle API calls
 async function fetcher<T>(endpoint: string, options?: RequestInit): Promise<T> {
   try {
     const url = `${API_BASE_URL}${endpoint}`;
-    console.log(`📡 Fetching: ${url}`); // Debugging ke liye
-
+    console.log(`📡 Requesting: ${url}`); // Updated logging
+    
     const res = await fetch(url, {
-      headers: {
-        "Content-Type": "application/json",
-        // Future: Yahan hum Clerk ka token bhejenge
-        // "Authorization": `Bearer ${token}` 
-      },
+      headers: { "Content-Type": "application/json" },
       ...options,
     });
 
     if (!res.ok) {
+      // Instructions wali update: Error detail print karega
+      const errorText = await res.text();
+      console.error(`API Error ${res.status}:`, errorText);
       throw new Error(`API Error: ${res.status}`);
     }
-
-    const data = await res.json();
-    return data as T;
+    return await res.json();
   } catch (error) {
     console.error("❌ API Call Failed:", error);
     throw error;
   }
 }
 
-// API Methods
 export const api = {
   // Dashboard
   getDashboard: (userId: string) => fetcher<any>(`/dashboard?userId=${userId}`),
-
-  // Fitness
-  getFitness: (userId: string, date: string) => fetcher<any>(`/fitness?userId=${userId}&date=${date}`),
-  updateFitness: (data: any) => fetcher("/fitness", { method: "POST", body: JSON.stringify(data) }),
-
+  
+  // Fitness Calls (Type Safe)
+  getFitness: (userId: string, date: string) => 
+    fetcher<FitnessData>(`/fitness?userId=${userId}&date=${date}`),
+  
+  // Save Data
+  updateFitness: (userId: string, date: string, data: Partial<FitnessData>) => 
+    fetcher("/fitness", {
+      method: "POST",
+      body: JSON.stringify({ userId, date, data }),
+    }),
+    
   // Tasks
   getTasks: (userId: string) => fetcher<any>(`/tasks?userId=${userId}`),
-  
-  // Aur baaki bhi hum yahan add karenge...
 };

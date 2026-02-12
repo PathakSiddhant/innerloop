@@ -1,29 +1,44 @@
-export const COLORS = {
-  // Base Colors (Backgrounds)
-  background: "#09090b", // Zinc-950 (Darkest)
-  surface: "#18181b",    // Zinc-900 (Cards)
-  surfaceLight: "#27272a", // Zinc-800 (Hover/Borders)
-  
-  // Text Colors
-  text: "#fafafa",       // Zinc-50 (White)
-  textMuted: "#a1a1aa",  // Zinc-400 (Gray)
-  textDim: "#52525b",    // Zinc-600 (Dark Gray)
-
-  // Brand Colors (The 6 Pillars)
-  fitness: "#10b981",    // Emerald-500 (Green)
-  tasks: "#f59e0b",      // Amber-500 (Orange)
-  tech: "#6366f1",       // Indigo-500 (Blue)
-  sports: "#ef4444",     // Red-500 (Red)
-  vault: "#d946ef",      // Fuchsia-500 (Pink)
-  entertainment: "#eab308", // Yellow-500 (Gold)
-
-  // UI Accents
-  primary: "#6366f1",    // Main Brand Color
-  border: "#27272a",     // Border Color
-  error: "#ef4444",      // Error Red
-  success: "#22c55e",    // Success Green
+// Apple Health Inspired Theme
+export const THEME_PALETTE = {
+  light: {
+    background: '#F2F2F7', // System Gray 6
+    surface: '#FFFFFF',    // White
+    surfaceHighlight: '#E5E5EA', // System Gray 5 (For secondary buttons)
+    text: '#000000',
+    textSecondary: '#8E8E93', // System Gray
+    primary: '#007AFF',    // System Blue
+    border: '#D1D1D6',     // System Gray 4
+    
+    // Activity Colors
+    move: '#FA114F',       // Pink
+    exercise: '#A4FF00',   // Lime
+    stand: '#00E0FF',      // Cyan
+  },
+  dark: {
+    background: '#000000', // Black
+    surface: '#1C1C1E',    // Dark Gray Card
+    surfaceHighlight: '#2C2C2E', // Lighter Gray (For buttons)
+    text: '#FFFFFF',
+    textSecondary: '#8E8E93',
+    primary: '#0A84FF',    // Dark Mode Blue
+    border: '#38383A',     // Dark Border
+    
+    // Activity Colors
+    move: '#FA114F',
+    exercise: '#A4FF00',
+    stand: '#00E0FF',
+  }
 };
 
-// API URL (Important: Localhost Android Emulator ke liye 10.0.2.2 hota hai)
-// Agar real device use kar raha hai, toh apne PC ka IP daalna padega (e.g., 192.168.1.5)
+export const COLORS = {
+  fitness: "#FA114F",
+  tasks: "#FF9500",
+  tech: "#5856D6",
+  sports: "#FF2D55",
+  vault: "#AF52DE",
+  entertainment: "#FFCC00",
+  primary: "#007AFF",
+};
+
+// ⚠️ Ensure this matches your setup
 export const API_BASE_URL = "http://10.0.2.2:3000/api/v1";

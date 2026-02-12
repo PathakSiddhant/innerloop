@@ -1,21 +1,61 @@
-// Fitness Types
+// mobile/src/lib/types.ts
+
+// --- FITNESS TYPES ---
+
+export interface Set {
+  id: string;
+  weight: number;
+  reps: number;
+  completed: boolean;
+}
+
+export interface Exercise {
+  id: string;
+  name: string;
+  sets: Set[];
+  isCollapsed?: boolean;
+}
+
 export interface WorkoutSession {
   id: string;
-  name: string; // "Chest Day"
-  duration: number; // minutes
-  calories: number;
+  name: string;
+  startTime: number;
+  endTime?: number | null;
+  exercises: Exercise[];
+}
+
+export interface FoodItem {
+  id: string;
+  name: string;
+  cals: number;
+  p: number;
+  c: number;
+  f: number;
 }
 
 export interface FitnessData {
-  steps: number;
-  water: number;
-  calories: number;
-  stepGoal: number;
+  date: string;
+  isRestDay: boolean;
+
+  // Goals (User can edit these now)
   waterGoal: number;
+  waterIntake: number;
+  stepGoal: number;
+  stepCount: number;
+
+  bodyWeight?: number | null;
+  targetWeight?: number | null;
+
+  // Complex Data
   sessions: WorkoutSession[];
+  meals: FoodItem[];
+
+  // Macros
+  macroGoal: { cals: number; p: number; c: number; f: number };
 }
 
-// Task Types
+// --- TASK TYPES ---
+
 export interface Task {
   id: string;
   title: string;
@@ -25,7 +65,8 @@ export interface Task {
   duration: number; // minutes
 }
 
-// Tech/Builder Types
+// --- TECH/BUILDER TYPES ---
+
 export interface Project {
   id: string;
   name: string;
@@ -33,7 +74,8 @@ export interface Project {
   techStack: string[];
 }
 
-// Dashboard Overview (Mix of everything)
+// --- DASHBOARD OVERVIEW ---
+
 export interface DashboardData {
   greeting: string; // "Good Morning, Siddhant"
   fitness: FitnessData;
