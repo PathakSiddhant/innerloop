@@ -1,48 +1,47 @@
 import React, { useEffect, useState, useRef, useMemo } from "react";
 import { 
   View, ScrollView, RefreshControl, TouchableOpacity, 
-  Modal, TextInput, StyleSheet, Dimensions, Platform, ActivityIndicator, Text 
+  Modal, TextInput, StyleSheet, Dimensions, Platform, ActivityIndicator, Alert, KeyboardAvoidingView 
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import * as Haptics from "expo-haptics";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { 
   Flame, Dumbbell, Utensils, Droplets, Footprints, Scale, 
-  X, Activity, Moon, Sun, Calendar, Plus, Minus, ChevronRight, Edit2, Check
+  X, Activity, Moon, Sun, Calendar, Plus, Minus, Check, ChevronRight, Save
 } from "lucide-react-native";
 
-import { ScreenWrapper } from "../components/ScreenWrapper";
 import { ThemedText } from "../components/ThemedText";
 import { useTheme } from "../lib/ThemeContext";
 import { api } from "../lib/api";
-import { FitnessData, FoodItem, WorkoutSession } from "../lib/types";
+import { FitnessData, FoodItem, WorkoutSession, Exercise, Set } from "../lib/types";
 
 const { width } = Dimensions.get("window");
-// TODO: Replace with real user ID from Auth context
-const TEST_USER_ID = "user_2s..."; 
+const TEST_USER_ID = "user_2s..."; // Ensure this matches exactly with Web
 
-// --- HELPER: Date Formatter ---
 const formatDateKey = (date: Date) => date.toISOString().split('T')[0];
+const generateId = () => Math.random().toString(36).substring(2, 9);
 
 export default function FitnessScreen() {
   const { colors, theme } = useTheme();
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
-  const [selectedDate] = useState(new Date());
+  const [selectedDate, setSelectedDate] = useState(new Date());
   
-  // Main Data State
+  // MAIN DATA STATE
   const [data, setData] = useState<FitnessData | null>(null);
   const [activeModal, setActiveModal] = useState<string | null>(null);
 
   const dateKey = useMemo(() => formatDateKey(selectedDate), [selectedDate]);
 
-  // --- API CALLS ---
+  // --- FETCH DATA ---
   const fetchData = React.useCallback(async () => {
     try {
       const res = await api.getFitness(TEST_USER_ID, dateKey);
       if (res) setData(res);
     } catch (e) {
-      console.error(e);
+      console.error("Fetch Error:", e);
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -51,31 +50,29 @@ export default function FitnessScreen() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  // --- AUTO SAVE LOGIC ---
+  // --- ROBUST AUTO SAVE ---
   const saveTimeout = useRef<NodeJS.Timeout | null>(null);
   
   const updateLocal = (updates: Partial<FitnessData>) => {
     if (!data) return;
-    
-    // 1. Immediate UI Update
     const newData = { ...data, ...updates };
-    setData(newData);
+    setData(newData); // Immediate UI Update
     
-    // 2. Debounce API Call (1 second delay)
+    // Haptics for feedback
+    if(Platform.OS !== 'web') Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
     if (saveTimeout.current) clearTimeout(saveTimeout.current);
-    
     saveTimeout.current = setTimeout(async () => {
-      console.log("💾 Auto-Saving Data...");
       try {
         await api.updateFitness(TEST_USER_ID, dateKey, newData);
-        console.log("✅ Data Saved!");
+        console.log("✅ Saved to Cloud");
       } catch (err) {
         console.error("❌ Save Failed:", err);
       }
     }, 1000);
   };
 
-  // Calculations
+  // --- CALCS ---
   const totalMacros = data?.meals?.reduce((acc, m) => ({
     p: acc.p + m.p, c: acc.c + m.c, f: acc.f + m.f, cals: acc.cals + m.cals
   }), { p: 0, c: 0, f: 0, cals: 0 }) || { p:0, c:0, f:0, cals:0 };
@@ -84,345 +81,308 @@ export default function FitnessScreen() {
     return (
       <View style={[styles.center, { backgroundColor: colors.background }]}>
         <ActivityIndicator color={colors.primary} size="large" />
-        <ThemedText style={{ marginTop: 10 }}>Loading Fitness OS...</ThemedText>
       </View>
     );
   }
 
+  const isRest = data?.isRestDay || false;
+
   return (
-    <ScreenWrapper noPadding style={{ backgroundColor: colors.background }}>
-      {/* HEADER BACKGROUND GRADIENT */}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       <LinearGradient
-        colors={theme === 'dark' ? ['rgba(168, 85, 247, 0.15)', 'transparent'] : ['rgba(168, 85, 247, 0.05)', 'transparent']}
-        style={[StyleSheet.absoluteFill, { height: 300 }]}
+        colors={theme === 'dark' ? ['#1e1b4b', '#000000'] : ['#e0e7ff', '#F2F2F7']}
+        style={StyleSheet.absoluteFillObject}
       />
 
       <ScrollView 
-        contentContainerStyle={{ padding: 20, paddingBottom: 120, paddingTop: insets.top + 10 }} // Extra padding top
+        contentContainerStyle={{ padding: 16, paddingBottom: 120, paddingTop: insets.top + 10 }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={fetchData} tintColor={colors.primary} />}
-        showsVerticalScrollIndicator={false}
       >
-        
-        {/* --- HEADER --- */}
-        <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 25 }}>
+        {/* HEADER */}
+        <View style={styles.header}>
           <View>
-            <ThemedText style={{ fontSize: 12, fontWeight: '800', letterSpacing: 1, color: colors.primary, textTransform: 'uppercase' }}>
-              Bio-Core v1.0
+            <ThemedText style={{ fontSize: 10, fontWeight: '900', letterSpacing: 1, color: isRest ? colors.textSecondary : colors.primary, textTransform: 'uppercase' }}>
+              ATHLETIC OS
             </ThemedText>
-            <ThemedText variant="h1" style={{ fontSize: 32, lineHeight: 40 }}>Fitness</ThemedText>
+            <ThemedText style={{ fontSize: 32, fontWeight: '900', color: colors.text }}>Fitness</ThemedText>
           </View>
-          
-          <View style={{ flexDirection: 'row', gap: 10 }}>
-             <TouchableOpacity 
-                onPress={() => updateLocal({ isRestDay: !data?.isRestDay })}
-                style={[styles.iconBtn, { backgroundColor: data?.isRestDay ? '#10b981' : colors.surface }]}
-             >
-                {data?.isRestDay ? <Moon size={20} color="white"/> : <Sun size={20} color={colors.text}/>}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+             <TouchableOpacity onPress={() => updateLocal({ isRestDay: !isRest })} style={[styles.pill, { backgroundColor: isRest ? colors.text : colors.surface }]}>
+                {isRest ? <Moon size={16} color={colors.background}/> : <Sun size={16} color={colors.text}/>}
              </TouchableOpacity>
+             <View style={[styles.pill, { backgroundColor: colors.surface }]}>
+                <Calendar size={16} color={colors.text} />
+                <ThemedText style={{ fontSize: 12, fontWeight: 'bold', marginLeft: 6 }}>
+                   {selectedDate.getDate()}/{selectedDate.getMonth()+1}
+                </ThemedText>
+             </View>
           </View>
         </View>
 
-        {/* --- MAIN GRID --- */}
-        <View style={{ gap: 16 }}>
+        {/* --- CARDS GRID --- */}
+        <View style={{ gap: 12 }}>
           
-          {/* 1. HERO: STREAK & CALORIES */}
-          <View style={{ flexDirection: 'row', gap: 16 }}>
-             {/* Streak Card */}
-             <View style={[styles.card, { flex: 1, backgroundColor: theme === 'dark' ? '#18181b' : '#fff', borderColor: colors.border }]}>
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                   <Flame size={20} color="#f97316" fill="#f97316" />
-                   <ThemedText style={{ fontWeight: '700', fontSize: 12, color: colors.textSecondary }}>STREAK</ThemedText>
+          {/* ROW 1 */}
+          <View style={{ flexDirection: 'row', gap: 12, height: 160 }}>
+             {/* STREAK */}
+             <BentoCard flex={0.4} color={isRest ? colors.surface : '#18181b'} borderColor={colors.glassBorder}>
+                <View style={[styles.iconCircle, { backgroundColor: isRest ? 'transparent' : 'rgba(249,115,22,0.1)' }]}>
+                   <Flame size={20} color={isRest ? colors.textSecondary : "#f97316"} />
                 </View>
-                <ThemedText style={{ fontSize: 36, fontWeight: '900' }}>3 <ThemedText style={{ fontSize: 14, color: colors.textSecondary }}>days</ThemedText></ThemedText>
-             </View>
-
-             {/* Calories Card */}
-             <TouchableOpacity 
-                onPress={() => setActiveModal('diet')}
-                activeOpacity={0.8}
-                style={[styles.card, { flex: 1, backgroundColor: theme === 'dark' ? '#18181b' : '#fff', borderColor: colors.border }]}
-             >
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                   <Utensils size={20} color="#10b981" />
-                   <ThemedText style={{ fontWeight: '700', fontSize: 12, color: colors.textSecondary }}>CALORIES</ThemedText>
-                </View>
-                <ThemedText style={{ fontSize: 36, fontWeight: '900' }}>{Math.round(totalMacros.cals)}</ThemedText>
-                <ThemedText style={{ fontSize: 12, color: colors.textSecondary, fontWeight: '600' }}>
-                   Goal: {data?.macroGoal?.cals} kcal
-                </ThemedText>
-                
-                {/* Progress Bar */}
-                <View style={{ height: 4, backgroundColor: colors.surfaceHighlight, marginTop: 8, borderRadius: 2 }}>
-                   <View style={{ width: `${Math.min((totalMacros.cals / (data?.macroGoal?.cals || 1)) * 100, 100)}%`, height: '100%', backgroundColor: '#10b981', borderRadius: 2 }} />
-                </View>
-             </TouchableOpacity>
-          </View>
-
-          {/* 2. ACTIVITY: STEPS (Large Card) */}
-          <TouchableOpacity 
-             onPress={() => setActiveModal('steps')}
-             activeOpacity={0.8}
-             style={[styles.card, { backgroundColor: theme === 'dark' ? '#18181b' : '#fff', borderColor: colors.border }]}
-          >
-             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <View>
-                   <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                      <Footprints size={20} color="#3b82f6" />
-                      <ThemedText style={{ fontWeight: '700', fontSize: 12, color: colors.textSecondary }}>STEPS</ThemedText>
+                   <ThemedText style={{ fontSize: 32, fontWeight: '900', color: isRest ? colors.textSecondary : 'white' }}>3</ThemedText>
+                   <ThemedText style={{ fontSize: 10, fontWeight: '700', color: isRest ? colors.textSecondary : '#fb923c' }}>STREAK</ThemedText>
+                </View>
+             </BentoCard>
+
+             {/* WORKOUT */}
+             <BentoCard flex={0.6} color={isRest ? colors.surface : '#18181b'} onPress={() => setActiveModal('workout')}>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                   <View style={[styles.iconCircle, { backgroundColor: isRest ? 'transparent' : 'rgba(168,85,247,0.1)' }]}>
+                      <Dumbbell size={20} color={isRest ? colors.textSecondary : "#a855f7"} />
                    </View>
-                   <ThemedText style={{ fontSize: 42, fontWeight: '900', letterSpacing: -1 }}>{data?.stepCount}</ThemedText>
-                   <ThemedText style={{ fontSize: 13, color: colors.textSecondary, fontWeight: '600' }}>Target: {data?.stepGoal}</ThemedText>
-                </View>
-                {/* Visual Circle (CSS Only) */}
-                <View style={{ width: 60, height: 60, borderRadius: 30, borderWidth: 6, borderColor: colors.surfaceHighlight, alignItems: 'center', justifyContent: 'center' }}>
-                   <View style={{ width: 60, height: 60, borderRadius: 30, borderWidth: 6, borderColor: '#3b82f6', position: 'absolute', opacity: 0.8, transform: [{rotate: '45deg'}] }} />
-                   <Footprints size={20} color={colors.textSecondary} />
-                </View>
-             </View>
-          </TouchableOpacity>
-
-          {/* 3. ROW: WATER & WORKOUT */}
-          <View style={{ flexDirection: 'row', gap: 16 }}>
-             
-             {/* Water */}
-             <TouchableOpacity 
-                onPress={() => setActiveModal('water')}
-                style={[styles.card, { flex: 1, backgroundColor: '#3b82f6', borderColor: '#3b82f6' }]}
-             >
-                <Droplets size={24} color="white" style={{ marginBottom: 12 }} />
-                <ThemedText style={{ fontSize: 28, fontWeight: '900', color: 'white' }}>{data?.waterIntake}</ThemedText>
-                <ThemedText style={{ fontSize: 12, fontWeight: '700', color: 'rgba(255,255,255,0.7)' }}>/ {data?.waterGoal} ml</ThemedText>
-             </TouchableOpacity>
-
-             {/* Workout */}
-             <TouchableOpacity 
-                onPress={() => setActiveModal('workout')}
-                style={[styles.card, { flex: 1, backgroundColor: theme === 'dark' ? '#18181b' : '#fff', borderColor: colors.border }]}
-             >
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
-                   <Dumbbell size={24} color="#a855f7" />
-                   <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: data?.sessions?.length ? '#a855f7' : colors.surfaceHighlight }} />
-                </View>
-                <ThemedText style={{ fontSize: 18, fontWeight: '800' }}>Workouts</ThemedText>
-                <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginTop: 4 }}>
-                   {data?.sessions?.length || 0} Sessions
-                </ThemedText>
-             </TouchableOpacity>
-          </View>
-
-          {/* 4. WEIGHT */}
-          <TouchableOpacity 
-             onPress={() => setActiveModal('weight')}
-             style={[styles.card, { backgroundColor: theme === 'dark' ? '#18181b' : '#fff', borderColor: colors.border, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }]}
-          >
-             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-                <View style={{ padding: 10, backgroundColor: 'rgba(236, 72, 153, 0.1)', borderRadius: 12 }}>
-                   <Scale size={20} color="#ec4899" />
+                   {data?.sessions?.length ? (
+                      <View style={{ paddingHorizontal: 8, paddingVertical: 4, backgroundColor: '#a855f7', borderRadius: 6 }}>
+                         <ThemedText style={{ fontSize: 10, fontWeight: 'bold', color: 'white' }}>DONE</ThemedText>
+                      </View>
+                   ) : null}
                 </View>
                 <View>
-                   <ThemedText style={{ fontWeight: '700' }}>Body Weight</ThemedText>
-                   <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>Target: {data?.targetWeight || '--'} kg</ThemedText>
+                   <ThemedText variant="h2" style={{ fontSize: 20, marginBottom: 4, color: isRest ? colors.textSecondary : 'white' }}>Workout</ThemedText>
+                   <ThemedText style={{ fontSize: 11, color: colors.textSecondary }}>{data?.sessions?.length || 0} Sessions Logged</ThemedText>
                 </View>
+             </BentoCard>
+          </View>
+
+          {/* NUTRITION CARD (Fixed Overflow) */}
+          <BentoCard onPress={() => setActiveModal('diet')} color={colors.surface}>
+             <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15, alignItems: 'center' }}>
+                <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+                   <Utensils size={18} color="#10b981" />
+                   <ThemedText style={{ fontWeight: '800', fontSize: 12, color: colors.textSecondary }}>NUTRITION</ThemedText>
+                </View>
+                <ThemedText style={{ fontWeight: '900', fontSize: 16 }}>{Math.round(totalMacros.cals)} <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>/ {data?.macroGoal?.cals}</ThemedText></ThemedText>
              </View>
-             <ThemedText style={{ fontSize: 24, fontWeight: '900' }}>{data?.bodyWeight || '--'} <ThemedText style={{ fontSize: 14, color: colors.textSecondary }}>kg</ThemedText></ThemedText>
-          </TouchableOpacity>
+             <View style={{ gap: 8 }}>
+                <MacroBar label="Protein" val={totalMacros.p} max={data?.macroGoal?.p} color="#3b82f6" bg={colors.surfaceHighlight} />
+                <MacroBar label="Carbs" val={totalMacros.c} max={data?.macroGoal?.c} color="#22c55e" bg={colors.surfaceHighlight} />
+                <MacroBar label="Fats" val={totalMacros.f} max={data?.macroGoal?.f} color="#eab308" bg={colors.surfaceHighlight} />
+             </View>
+          </BentoCard>
+
+          {/* ROW 3: WATER & STEPS */}
+          <View style={{ flexDirection: 'row', gap: 12, height: 160 }}>
+             <BentoCard flex={1} color="#3b82f6" onPress={() => setActiveModal('water')} border={false}>
+                <View style={{ justifyContent: 'space-between', height: '100%' }}>
+                   <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
+                      <View style={{ padding: 6, backgroundColor: 'rgba(255,255,255,0.2)', borderRadius: 10 }}>
+                         <Droplets size={18} color="white" />
+                      </View>
+                   </View>
+                   <View>
+                      <ThemedText style={{ fontSize: 28, fontWeight: '900', color: 'white' }}>{data?.waterIntake}</ThemedText>
+                      <ThemedText style={{ fontSize: 11, fontWeight: '700', color: 'rgba(255,255,255,0.7)' }}>/ {data?.waterGoal} ml</ThemedText>
+                   </View>
+                </View>
+             </BentoCard>
+
+             <BentoCard flex={1} onPress={() => setActiveModal('steps')} color={colors.surface}>
+                <View style={{ justifyContent: 'space-between', height: '100%' }}>
+                   <View style={[styles.iconCircle, { backgroundColor: 'rgba(16,185,129,0.1)' }]}>
+                      <Footprints size={18} color="#10b981" />
+                   </View>
+                   <View>
+                      <ThemedText style={{ fontSize: 28, fontWeight: '900' }}>{data?.stepCount}</ThemedText>
+                      <ThemedText style={{ fontSize: 11, fontWeight: '700', color: colors.textSecondary }}>GOAL: {data?.stepGoal}</ThemedText>
+                   </View>
+                   <View style={{ height: 6, backgroundColor: colors.surfaceHighlight, borderRadius: 3 }}>
+                      <View style={{ width: `${Math.min(((data?.stepCount||0)/(data?.stepGoal||1))*100, 100)}%`, height: '100%', backgroundColor: '#10b981' }} />
+                   </View>
+                </View>
+             </BentoCard>
+          </View>
+
+          {/* WEIGHT CARD */}
+          <BentoCard height={100} onPress={() => setActiveModal('weight')} color={colors.surface}>
+             <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', height: '100%' }}>
+                <View style={{ flexDirection: 'row', gap: 12, alignItems: 'center' }}>
+                   <View style={[styles.iconCircle, { backgroundColor: 'rgba(236, 72, 153, 0.1)' }]}>
+                      <Scale size={20} color="#ec4899" />
+                   </View>
+                   <View>
+                      <ThemedText style={{ fontWeight: '800' }}>Body Weight</ThemedText>
+                      <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>Target: {data?.targetWeight || '--'} kg</ThemedText>
+                   </View>
+                </View>
+                <ThemedText style={{ fontSize: 24, fontWeight: '900' }}>{data?.bodyWeight || '--'} <ThemedText style={{ fontSize: 14, color: colors.textSecondary }}>kg</ThemedText></ThemedText>
+             </View>
+          </BentoCard>
 
         </View>
       </ScrollView>
 
-      {/* ================= MODALS ================= */}
+      {/* --- FUNCTIONAL MODALS --- */}
+      
+      {/* 1. NUTRITION MODAL (ALL FIELDS) */}
+      <FullModal visible={activeModal === 'diet'} onClose={() => setActiveModal(null)} title="Nutrition OS">
+         <DietLab data={data} updateLocal={updateLocal} colors={colors} />
+      </FullModal>
 
-      {/* 1. WATER MODAL */}
+      {/* 2. WORKOUT MODAL (FULL LAB) */}
+      <FullModal visible={activeModal === 'workout'} onClose={() => setActiveModal(null)} title="Workout Lab">
+         <WorkoutLab data={data} updateLocal={updateLocal} colors={colors} />
+      </FullModal>
+
+      {/* 3. WATER MODAL */}
       <BottomModal visible={activeModal === 'water'} onClose={() => setActiveModal(null)} title="Hydration">
-         <View style={{ padding: 20 }}>
-            <View style={{ alignItems: 'center', marginBottom: 30 }}>
-               <ThemedText style={{ fontSize: 60, fontWeight: '900', color: '#3b82f6' }}>{data?.waterIntake}</ThemedText>
-               <ThemedText style={{ fontSize: 16, color: colors.textSecondary }}>ml consumed</ThemedText>
-            </View>
-
-            {/* Quick Add Buttons */}
-            <View style={{ flexDirection: 'row', gap: 12, marginBottom: 30 }}>
-               {[250, 500, 750].map(amt => (
-                  <TouchableOpacity key={amt} onPress={() => updateLocal({ waterIntake: (data?.waterIntake || 0) + amt })} style={[styles.actionBtn, { backgroundColor: colors.surfaceHighlight }]}>
-                     <Plus size={16} color={colors.text} />
-                     <ThemedText style={{ fontWeight: '700' }}>{amt}ml</ThemedText>
-                  </TouchableOpacity>
-               ))}
-            </View>
-
-            {/* Edit Goal */}
-            <View style={{ padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
-               <ThemedText style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>DAILY GOAL (ML)</ThemedText>
-               <TextInput 
-                  style={{ fontSize: 20, fontWeight: 'bold', color: colors.text }}
-                  keyboardType="numeric"
-                  value={String(data?.waterGoal || 3000)}
-                  onChangeText={(t) => updateLocal({ waterGoal: Number(t) })}
-               />
-            </View>
-            
-            <TouchableOpacity onPress={() => updateLocal({ waterIntake: 0 })} style={{ alignItems: 'center', marginTop: 20 }}>
-               <ThemedText style={{ color: '#ef4444', fontWeight: '600' }}>Reset Counter</ThemedText>
-            </TouchableOpacity>
-         </View>
+         <HydrationLab data={data} updateLocal={updateLocal} colors={colors} />
       </BottomModal>
 
-      {/* 2. STEPS MODAL */}
+      {/* 4. ACTIVITY MODAL */}
       <BottomModal visible={activeModal === 'steps'} onClose={() => setActiveModal(null)} title="Activity">
-         <View style={{ padding: 20 }}>
-            <View style={{ alignItems: 'center', marginBottom: 30 }}>
-               <Footprints size={50} color="#10b981" style={{ marginBottom: 10 }} />
-               <ThemedText style={{ fontSize: 60, fontWeight: '900', color: colors.text }}>{data?.stepCount}</ThemedText>
-               <ThemedText style={{ fontSize: 16, color: colors.textSecondary }}>steps walked</ThemedText>
-            </View>
-
-            {/* Manual Entry */}
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 30 }}>
-               <TouchableOpacity onPress={() => updateLocal({ stepCount: Math.max(0, (data?.stepCount||0) - 100) })} style={[styles.iconBtn, { backgroundColor: colors.surfaceHighlight }]}>
-                  <Minus size={24} color={colors.text} />
-               </TouchableOpacity>
-               <View style={{ flex: 1, backgroundColor: colors.surfaceHighlight, borderRadius: 16, justifyContent: 'center', alignItems: 'center' }}>
-                  <TextInput 
-                     style={{ fontSize: 24, fontWeight: 'bold', color: colors.text, textAlign: 'center', width: '100%' }}
-                     keyboardType="numeric"
-                     value={String(data?.stepCount || 0)}
-                     onChangeText={(t) => updateLocal({ stepCount: Number(t) })}
-                  />
-               </View>
-               <TouchableOpacity onPress={() => updateLocal({ stepCount: (data?.stepCount||0) + 100 })} style={[styles.iconBtn, { backgroundColor: colors.primary }]}>
-                  <Plus size={24} color="white" />
-               </TouchableOpacity>
-            </View>
-
-            {/* Edit Goal */}
-            <View style={{ padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
-               <ThemedText style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>DAILY STEP GOAL</ThemedText>
-               <TextInput 
-                  style={{ fontSize: 20, fontWeight: 'bold', color: colors.text }}
-                  keyboardType="numeric"
-                  value={String(data?.stepGoal || 10000)}
-                  onChangeText={(t) => updateLocal({ stepGoal: Number(t) })}
-               />
-            </View>
-         </View>
-      </BottomModal>
-
-      {/* 3. DIET MODAL */}
-      <BottomModal visible={activeModal === 'diet'} onClose={() => setActiveModal(null)} title="Nutrition">
-         <DietView 
-            data={data} 
-            updateLocal={updateLocal} 
-            colors={colors} 
-         />
-      </BottomModal>
-
-      {/* 4. WORKOUT MODAL */}
-      <BottomModal visible={activeModal === 'workout'} onClose={() => setActiveModal(null)} title="Workout Lab">
-         <WorkoutView 
-            sessions={data?.sessions || []} 
-            onSave={(s: WorkoutSession) => updateLocal({ sessions: [...(data?.sessions || []), s] })} 
-            colors={colors}
-         />
+         <ActivityLab data={data} updateLocal={updateLocal} colors={colors} />
       </BottomModal>
 
       {/* 5. WEIGHT MODAL */}
       <BottomModal visible={activeModal === 'weight'} onClose={() => setActiveModal(null)} title="Body Weight">
-         <View style={{ padding: 20 }}>
-            <View style={{ flexDirection: 'row', gap: 15 }}>
-               <View style={{ flex: 1, padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
-                  <ThemedText style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>CURRENT (KG)</ThemedText>
-                  <TextInput 
-                     style={{ fontSize: 24, fontWeight: 'bold', color: colors.text }}
-                     keyboardType="numeric"
-                     placeholder="0.0"
-                     onSubmitEditing={(e) => updateLocal({ bodyWeight: parseFloat(e.nativeEvent.text) })}
-                  />
-               </View>
-               <View style={{ flex: 1, padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
-                  <ThemedText style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginBottom: 8 }}>TARGET (KG)</ThemedText>
-                  <TextInput 
-                     style={{ fontSize: 24, fontWeight: 'bold', color: colors.text }}
-                     keyboardType="numeric"
-                     placeholder="0.0"
-                     value={String(data?.targetWeight || '')}
-                     onChangeText={(t) => updateLocal({ targetWeight: parseFloat(t) })}
-                  />
-               </View>
-            </View>
-         </View>
+         <WeightLab data={data} updateLocal={updateLocal} colors={colors} />
       </BottomModal>
 
-    </ScreenWrapper>
+    </View>
   );
 }
 
-// --- SUB COMPONENTS ---
+// --- SUB-COMPONENTS & LOGIC ---
+
+const BentoCard = ({ children, flex, height, color, onPress, borderColor }: any) => {
+  const { colors } = useTheme();
+  return (
+    <TouchableOpacity 
+      activeOpacity={onPress ? 0.8 : 1}
+      onPress={onPress}
+      style={{
+        flex, height, 
+        backgroundColor: color, 
+        borderRadius: 24, 
+        padding: 16,
+        borderWidth: borderColor ? 1 : 0,
+        borderColor: borderColor,
+        overflow: 'hidden'
+      }}
+    >
+      {children}
+    </TouchableOpacity>
+  );
+};
+
+const MacroBar = ({ label, val, max, color, bg }: any) => (
+  <View>
+    <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+      <ThemedText style={{ fontSize: 11, fontWeight: '700' }}>{label}</ThemedText>
+      <ThemedText style={{ fontSize: 11, color: '#9ca3af' }}>{Math.round(val)}/{max}g</ThemedText>
+    </View>
+    <View style={{ height: 6, backgroundColor: bg, borderRadius: 3 }}>
+      <View style={{ width: `${Math.min((val/max)*100, 100)}%`, height: '100%', backgroundColor: color, borderRadius: 3 }} />
+    </View>
+  </View>
+);
+
+const FullModal = ({ visible, onClose, title, children }: any) => {
+   const { colors } = useTheme();
+   return (
+      <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
+         <View style={{ flex: 1, backgroundColor: colors.background }}>
+            <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 20, borderBottomWidth: 1, borderColor: colors.glassBorder }}>
+               <ThemedText variant="h2" style={{ marginBottom: 0 }}>{title}</ThemedText>
+               <TouchableOpacity onPress={onClose} style={{ padding: 8, backgroundColor: colors.surfaceHighlight, borderRadius: 20 }}>
+                  <X size={20} color={colors.text} />
+               </TouchableOpacity>
+            </View>
+            <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{ flex: 1 }}>
+               <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 100 }}>{children}</ScrollView>
+            </KeyboardAvoidingView>
+         </View>
+      </Modal>
+   );
+};
 
 const BottomModal = ({ visible, onClose, title, children }: any) => {
    const { colors, theme } = useTheme();
    return (
-      <Modal visible={visible} animationType="slide" transparent presentationStyle="overFullScreen">
+      <Modal visible={visible} animationType="slide" transparent>
          <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-end' }}>
-            <View style={{ backgroundColor: theme === 'dark' ? '#09090b' : '#fff', borderTopLeftRadius: 30, borderTopRightRadius: 30, height: '85%', overflow: 'hidden' }}>
-               <View style={{ padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderColor: colors.border }}>
-                  <ThemedText variant="h2" style={{ marginBottom: 0, fontSize: 24 }}>{title}</ThemedText>
-                  <TouchableOpacity onPress={onClose} style={{ padding: 8, backgroundColor: colors.surfaceHighlight, borderRadius: 20 }}>
+            <View style={{ backgroundColor: theme === 'dark' ? '#09090b' : '#fff', borderTopLeftRadius: 30, borderTopRightRadius: 30, paddingBottom: 40, maxHeight: '85%' }}>
+               <View style={{ padding: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderColor: colors.glassBorder }}>
+                  <ThemedText style={{ fontSize: 20, fontWeight: '800', color: colors.text }}>{title}</ThemedText>
+                  <TouchableOpacity onPress={onClose} style={{ padding: 5, backgroundColor: colors.surfaceHighlight, borderRadius: 20 }}>
                      <X size={20} color={colors.text} />
                   </TouchableOpacity>
                </View>
-               <ScrollView contentContainerStyle={{ paddingBottom: 50 }}>{children}</ScrollView>
+               <ScrollView>{children}</ScrollView>
             </View>
          </View>
       </Modal>
    );
 };
 
-const DietView = ({ data, updateLocal, colors }: any) => {
+// --- LOGIC LABS (FIXED) ---
+
+const DietLab = ({ data, updateLocal, colors }: any) => {
    const [name, setName] = useState('');
    const [cals, setCals] = useState('');
+   const [p, setP] = useState('');
+   const [c, setC] = useState('');
+   const [f, setF] = useState('');
    
    return (
-      <View style={{ padding: 20, gap: 20 }}>
-         {/* Goal Setter */}
-         <View style={{ padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16, marginBottom: 10 }}>
-             <ThemedText style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary, marginBottom: 5 }}>CALORIE GOAL</ThemedText>
+      <View style={{ gap: 20 }}>
+         {/* Goal */}
+         <View style={{ padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
+             <ThemedText style={{ fontSize: 12, fontWeight: '700', color: colors.textSecondary }}>CALORIE GOAL</ThemedText>
              <TextInput 
-                style={{ fontSize: 24, fontWeight: 'bold', color: colors.text }} 
+                style={{ fontSize: 32, fontWeight: '900', color: colors.text }} 
                 keyboardType="numeric"
                 value={String(data?.macroGoal?.cals || 2500)}
                 onChangeText={(t) => updateLocal({ macroGoal: { ...data.macroGoal, cals: Number(t) } })}
              />
          </View>
 
-         {/* Add Food */}
-         <View style={{ gap: 10 }}>
-            <ThemedText variant="subtitle">Add Meal</ThemedText>
-            <TextInput placeholder="Meal Name (e.g. Eggs)" placeholderTextColor={colors.textSecondary} style={[styles.input, { color: colors.text, borderColor: colors.border }]} value={name} onChangeText={setName} />
-            <TextInput placeholder="Calories" placeholderTextColor={colors.textSecondary} keyboardType="numeric" style={[styles.input, { color: colors.text, borderColor: colors.border }]} value={cals} onChangeText={setCals} />
+         {/* ADD FOOD - FULL INPUTS */}
+         <View style={{ gap: 10, padding: 15, backgroundColor: colors.surface, borderRadius: 16 }}>
+            <ThemedText variant="subtitle">Log Meal</ThemedText>
+            <TextInput placeholder="Food Name (e.g. Eggs)" placeholderTextColor={colors.textSecondary} style={[styles.input, { color: colors.text, borderColor: colors.glassBorder }]} value={name} onChangeText={setName} />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+               <TextInput placeholder="Cals" placeholderTextColor={colors.textSecondary} keyboardType="numeric" style={[styles.input, { flex: 1, color: colors.text, borderColor: colors.glassBorder }]} value={cals} onChangeText={setCals} />
+               <TextInput placeholder="P (g)" placeholderTextColor={colors.textSecondary} keyboardType="numeric" style={[styles.input, { flex: 1, color: colors.text, borderColor: colors.glassBorder }]} value={p} onChangeText={setP} />
+            </View>
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+               <TextInput placeholder="C (g)" placeholderTextColor={colors.textSecondary} keyboardType="numeric" style={[styles.input, { flex: 1, color: colors.text, borderColor: colors.glassBorder }]} value={c} onChangeText={setC} />
+               <TextInput placeholder="F (g)" placeholderTextColor={colors.textSecondary} keyboardType="numeric" style={[styles.input, { flex: 1, color: colors.text, borderColor: colors.glassBorder }]} value={f} onChangeText={setF} />
+            </View>
             <TouchableOpacity 
                onPress={() => {
                   if(name && cals) {
-                     const m: FoodItem = { id: Math.random().toString(), name, cals: Number(cals), p: 0, c: 0, f: 0 };
+                     const m = { id: generateId(), name, cals: Number(cals), p: Number(p), c: Number(c), f: Number(f) };
                      updateLocal({ meals: [...(data?.meals || []), m] });
-                     setName(''); setCals('');
+                     setName(''); setCals(''); setP(''); setC(''); setF('');
                   }
                }}
-               style={{ backgroundColor: '#10b981', padding: 15, borderRadius: 12, alignItems: 'center' }}
+               style={{ backgroundColor: '#10b981', padding: 15, borderRadius: 12, alignItems: 'center', marginTop: 5 }}
             >
-               <ThemedText style={{ color: 'white', fontWeight: 'bold' }}>Log Food</ThemedText>
+               <ThemedText style={{ color: 'white', fontWeight: 'bold' }}>Add to Diary</ThemedText>
             </TouchableOpacity>
          </View>
 
-         {/* History */}
+         {/* LIST */}
          <View style={{ gap: 10 }}>
-            <ThemedText variant="subtitle">Today&apos;s Logs</ThemedText>
-            {data?.meals?.map((m: FoodItem, i: number) => (
-               <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 12, alignItems: 'center' }}>
+            <ThemedText variant="subtitle">Today's Meals</ThemedText>
+            {data?.meals?.map((m: any, i: number) => (
+               <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', padding: 15, backgroundColor: colors.surface, borderRadius: 12, alignItems: 'center' }}>
                   <View>
                      <ThemedText style={{ fontWeight: 'bold', color: colors.text }}>{m.name}</ThemedText>
-                     <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>{m.cals} kcal</ThemedText>
+                     <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>{m.cals} kcal • P:{m.p} C:{m.c} F:{m.f}</ThemedText>
                   </View>
-                  <TouchableOpacity onPress={() => updateLocal({ meals: data.meals.filter((item: FoodItem) => item.id !== m.id) })}>
+                  <TouchableOpacity onPress={() => updateLocal({ meals: data.meals.filter((item: any) => item.id !== m.id) })}>
                      <X size={16} color={colors.textSecondary} />
                   </TouchableOpacity>
                </View>
@@ -432,48 +392,190 @@ const DietView = ({ data, updateLocal, colors }: any) => {
    );
 };
 
-const WorkoutView = ({ sessions, onSave, colors }: any) => {
-   const [name, setName] = useState('');
-   
+const WorkoutLab = ({ data, updateLocal, colors }: any) => {
+   const [sessionName, setSessionName] = useState('');
+   const [exercises, setExercises] = useState<Exercise[]>([]);
+
+   const addExercise = () => {
+      setExercises([...exercises, { id: generateId(), name: '', sets: [{ id: generateId(), weight: 0, reps: 0, completed: false }] }]);
+   };
+
+   const updateEx = (idx: number, field: string, val: any) => {
+      const newEx = [...exercises];
+      // @ts-ignore
+      newEx[idx][field] = val;
+      setExercises(newEx);
+   };
+
+   const updateSet = (exIdx: number, setIdx: number, field: string, val: any) => {
+      const newEx = [...exercises];
+      // @ts-ignore
+      newEx[exIdx].sets[setIdx][field] = val;
+      setExercises(newEx);
+   };
+
+   const saveSession = () => {
+      if(!sessionName) return Alert.alert("Name Required", "Please name your session");
+      const newSession: WorkoutSession = {
+         id: generateId(),
+         name: sessionName,
+         startTime: Date.now(),
+         endTime: Date.now() + 3600000, 
+         exercises
+      };
+      updateLocal({ sessions: [...(data?.sessions || []), newSession] });
+      setSessionName(''); setExercises([]);
+      Alert.alert("Success", "Workout Logged!");
+   };
+
    return (
-      <View style={{ padding: 20 }}>
+      <View style={{ gap: 20 }}>
          <TextInput 
             placeholder="Session Name (e.g. Push Day)" 
-            placeholderTextColor={colors.textSecondary} 
-            style={[styles.input, { color: colors.text, borderColor: colors.border, marginBottom: 15 }]} 
-            value={name} 
-            onChangeText={setName} 
+            placeholderTextColor={colors.textSecondary}
+            style={[styles.input, { color: colors.text, borderColor: colors.glassBorder }]} 
+            value={sessionName} onChangeText={setSessionName}
          />
-         <TouchableOpacity 
-            onPress={() => {
-               if(name) {
-                  onSave({ id: Math.random().toString(), name, startTime: Date.now(), exercises: [] });
-                  setName('');
-               }
-            }}
-            style={{ backgroundColor: '#a855f7', padding: 15, borderRadius: 12, alignItems: 'center', marginBottom: 30 }}
-         >
-            <ThemedText style={{ color: 'white', fontWeight: 'bold' }}>Log Session</ThemedText>
+         
+         {exercises.map((ex, i) => (
+            <View key={ex.id} style={{ padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16, gap: 10 }}>
+               <TextInput 
+                  placeholder="Exercise Name" 
+                  placeholderTextColor={colors.textSecondary}
+                  style={{ fontSize: 18, fontWeight: 'bold', color: colors.text, borderBottomWidth: 1, borderColor: colors.glassBorder, paddingBottom: 5 }}
+                  value={ex.name} onChangeText={t => updateEx(i, 'name', t)}
+               />
+               {ex.sets.map((set, j) => (
+                  <View key={set.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                     <ThemedText style={{ width: 20, color: colors.textSecondary }}>{j+1}</ThemedText>
+                     <TextInput 
+                        placeholder="kg" keyboardType="numeric" 
+                        style={[styles.smallInput, { color: colors.text, backgroundColor: colors.background }]}
+                        onChangeText={t => updateSet(i, j, 'weight', Number(t))}
+                     />
+                     <TextInput 
+                        placeholder="reps" keyboardType="numeric" 
+                        style={[styles.smallInput, { color: colors.text, backgroundColor: colors.background }]}
+                        onChangeText={t => updateSet(i, j, 'reps', Number(t))}
+                     />
+                     <TouchableOpacity onPress={() => updateSet(i, j, 'completed', !set.completed)}>
+                        <Check size={20} color={set.completed ? '#10b981' : colors.textSecondary} />
+                     </TouchableOpacity>
+                  </View>
+               ))}
+               <TouchableOpacity onPress={() => {
+                  const newEx = [...exercises];
+                  newEx[i].sets.push({ id: generateId(), weight: 0, reps: 0, completed: false });
+                  setExercises(newEx);
+               }}>
+                  <ThemedText style={{ fontSize: 12, color: colors.primary, textAlign: 'center', marginTop: 5 }}>+ Add Set</ThemedText>
+               </TouchableOpacity>
+            </View>
+         ))}
+
+         <TouchableOpacity onPress={addExercise} style={{ padding: 15, borderWidth: 1, borderColor: colors.primary, borderRadius: 12, alignItems: 'center', borderStyle: 'dashed' }}>
+            <ThemedText style={{ color: colors.primary, fontWeight: 'bold' }}>+ Add Exercise</ThemedText>
          </TouchableOpacity>
 
-         {sessions.map((s: any, i: number) => (
-            <View key={i} style={{ padding: 15, borderLeftWidth: 4, borderColor: '#a855f7', backgroundColor: colors.surfaceHighlight, marginBottom: 10, borderRadius: 8 }}>
+         <TouchableOpacity onPress={saveSession} style={{ padding: 16, backgroundColor: colors.primary, borderRadius: 12, alignItems: 'center', marginTop: 10 }}>
+            <ThemedText style={{ color: 'white', fontWeight: 'bold' }}>Finish & Save</ThemedText>
+         </TouchableOpacity>
+
+         {/* History */}
+         <ThemedText variant="subtitle" style={{ marginTop: 20 }}>History</ThemedText>
+         {data?.sessions?.map((s: WorkoutSession, i: number) => (
+            <View key={i} style={{ padding: 15, backgroundColor: colors.surface, borderRadius: 12, borderLeftWidth: 4, borderColor: colors.primary }}>
                <ThemedText style={{ fontWeight: 'bold', color: colors.text }}>{s.name}</ThemedText>
-               <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>{new Date(s.startTime).toLocaleTimeString()}</ThemedText>
+               <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>{s.exercises.length} Exercises • {new Date(s.startTime).toLocaleTimeString()}</ThemedText>
             </View>
          ))}
       </View>
    );
 };
 
+const HydrationLab = ({ data, updateLocal, colors }: any) => {
+   return (
+      <View style={{ alignItems: 'center' }}>
+         <ThemedText style={{ fontSize: 64, fontWeight: '900', color: '#3b82f6' }}>{data?.waterIntake}</ThemedText>
+         <ThemedText style={{ fontSize: 12, fontWeight: 'bold', color: colors.textSecondary }}>MILLILITERS</ThemedText>
+
+         <View style={{ flexDirection: 'row', gap: 15, marginVertical: 30 }}>
+            {[250, 500, 1000].map(amt => (
+               <TouchableOpacity key={amt} onPress={() => updateLocal({ waterIntake: (data?.waterIntake||0) + amt })} style={{ paddingVertical: 15, paddingHorizontal: 25, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
+                  <ThemedText style={{ fontWeight: 'bold', color: colors.text }}>+{amt}</ThemedText>
+               </TouchableOpacity>
+            ))}
+         </View>
+
+         <View style={{ width: '100%', padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
+            <ThemedText style={{ fontSize: 12, color: colors.textSecondary, marginBottom: 5 }}>DAILY GOAL</ThemedText>
+            <TextInput 
+               keyboardType="numeric" 
+               style={{ fontSize: 24, fontWeight: 'bold', color: colors.text }} 
+               value={String(data?.waterGoal || 3000)}
+               onChangeText={t => updateLocal({ waterGoal: Number(t) })}
+            />
+         </View>
+         <TouchableOpacity onPress={() => updateLocal({ waterIntake: 0 })} style={{ marginTop: 20 }}>
+            <RotateCcw size={16} color="#ef4444" />
+         </TouchableOpacity>
+      </View>
+   );
+};
+
+const ActivityLab = ({ data, updateLocal, colors }: any) => {
+   return (
+      <View style={{ alignItems: 'center', gap: 30 }}>
+         <ThemedText style={{ fontSize: 64, fontWeight: '900', color: colors.text }}>{data?.stepCount}</ThemedText>
+         <View style={{ flexDirection: 'row', gap: 20 }}>
+            <TouchableOpacity onPress={() => updateLocal({ stepCount: Math.max(0, (data?.stepCount||0)-500) })} style={[styles.roundBtn, { backgroundColor: colors.surfaceHighlight }]}>
+               <Minus size={24} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => updateLocal({ stepCount: (data?.stepCount||0)+500 })} style={[styles.roundBtn, { backgroundColor: '#10b981' }]}>
+               <Plus size={24} color="white" />
+            </TouchableOpacity>
+         </View>
+         <View style={{ width: '100%', padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
+            <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>STEP GOAL</ThemedText>
+            <TextInput 
+               keyboardType="numeric" style={{ fontSize: 24, fontWeight: 'bold', color: colors.text }} 
+               value={String(data?.stepGoal || 10000)} onChangeText={t => updateLocal({ stepGoal: Number(t) })}
+            />
+         </View>
+      </View>
+   );
+};
+
+const WeightLab = ({ data, updateLocal, colors }: any) => {
+   return (
+      <View style={{ gap: 20 }}>
+         <View style={{ flexDirection: 'row', gap: 15 }}>
+            <View style={{ flex: 1, padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
+               <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>CURRENT (KG)</ThemedText>
+               <TextInput 
+                  keyboardType="numeric" style={{ fontSize: 32, fontWeight: '900', color: colors.text }} placeholder="0.0"
+                  value={String(data?.bodyWeight || '')}
+                  onChangeText={t => updateLocal({ bodyWeight: parseFloat(t) })}
+               />
+            </View>
+            <View style={{ flex: 1, padding: 15, backgroundColor: colors.surfaceHighlight, borderRadius: 16 }}>
+               <ThemedText style={{ fontSize: 12, color: colors.textSecondary }}>TARGET (KG)</ThemedText>
+               <TextInput 
+                  keyboardType="numeric" style={{ fontSize: 32, fontWeight: '900', color: colors.text }} 
+                  value={String(data?.targetWeight || '')} onChangeText={t => updateLocal({ targetWeight: parseFloat(t) })}
+               />
+            </View>
+         </View>
+      </View>
+   );
+};
+
 const styles = StyleSheet.create({
   center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  iconBtn: { width: 44, height: 44, borderRadius: 22, justifyContent: 'center', alignItems: 'center' },
-  card: { padding: 20, borderRadius: 24, borderWidth: 1 },
-  iconBoxOrange: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(249, 115, 22, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  iconBoxPurple: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(168, 85, 247, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  iconBoxGreen: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(34, 197, 94, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  iconBoxPink: { width: 36, height: 36, borderRadius: 12, backgroundColor: 'rgba(236, 72, 153, 0.1)', justifyContent: 'center', alignItems: 'center' },
-  input: { padding: 16, borderWidth: 1, borderRadius: 12, fontSize: 16 },
-  actionBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingVertical: 12, borderRadius: 12 },
+  header: { marginBottom: 20, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
+  pill: { flexDirection: 'row', alignItems: 'center', borderRadius: 20, paddingVertical: 8, paddingHorizontal: 12 },
+  iconCircle: { width: 40, height: 40, borderRadius: 20, justifyContent: 'center', alignItems: 'center' },
+  input: { padding: 15, borderWidth: 1, borderRadius: 12, fontSize: 16 },
+  smallInput: { padding: 10, borderRadius: 8, width: 60, textAlign: 'center' },
+  roundBtn: { width: 60, height: 60, borderRadius: 30, justifyContent: 'center', alignItems: 'center' },
 });

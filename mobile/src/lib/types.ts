@@ -37,18 +37,19 @@ export interface FitnessData {
   date: string;
   isRestDay: boolean;
 
-  // Goals (User can edit these now)
+  // Goals
   waterGoal: number;
   waterIntake: number;
   stepGoal: number;
   stepCount: number;
 
-  bodyWeight?: number | null;
-  targetWeight?: number | null;
+  // Updated as per instructions (removed | null)
+  bodyWeight?: number;
+  targetWeight?: number;
 
-  // Complex Data
-  sessions: WorkoutSession[];
-  meals: FoodItem[];
+  // Complex Data (Changed to any[] as per instructions)
+  sessions: any[];
+  meals: any[];
 
   // Macros
   macroGoal: { cals: number; p: number; c: number; f: number };
