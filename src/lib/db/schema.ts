@@ -6,6 +6,7 @@ import { pgTable, text, integer, boolean, jsonb, real, uuid, timestamp } from "d
 export interface AIBlueprint {
   tagline: string;
   description: string;
+  detialedExplantation?: string;
   techStack: any[]; 
   databaseSchema: any[];
   roadmap: any[];
